@@ -6,8 +6,14 @@ export interface Cat { id: string; parentId: string | null; kind: 'depense' | 'r
 /** Somme signée des montants EUR par mois puis par catégorie ('' = non catégorisé). */
 export type Actuals = Map<string, Map<string, number>>
 
+/** Échéances datées (charges fixes, revenus) par mois puis par catégorie : la source unique de ces montants. */
+export interface PlannedItem { id: string; name: string; date: string; amount: number }
+export type RecurringPlan = Map<string, Map<string, PlannedItem[]>>
+
 export interface Row {
   categoryId: string; kind: 'depense' | 'revenu'
+  source: 'ligne' | 'echeances' // montant saisi dans le budget, ou calculé depuis les échéances datées
+  items: PlannedItem[]          // échéances du mois pour cette catégorie (même si une ligne saisie l'emporte)
   base: number | null          // montant du modèle pour ce mois
   exception: Exception | null  // surcharge ponctuelle
   planned: number              // exception ?? base
@@ -35,7 +41,7 @@ export function lineFor(lines: Line[], categoryId: string, month: string): Line 
  * Calcule le budget mois par mois de `from` à `to`. Le report (rollover) s'accumule depuis `from` :
  * passer le premier mois du budget pour un report exact.
  */
-export function computeBudget(cats: Cat[], lines: Line[], exceptions: Exception[], actuals: Actuals, from: string, to: string): MonthBudget[] {
+export function computeBudget(cats: Cat[], lines: Line[], exceptions: Exception[], actuals: Actuals, from: string, to: string, plan: RecurringPlan = new Map()): MonthBudget[] {
   const byId = new Map(cats.map((c) => [c.id, c]))
   const carry = new Map<string, number>()
   const out: MonthBudget[] = []
@@ -43,12 +49,16 @@ export function computeBudget(cats: Cat[], lines: Line[], exceptions: Exception[
     const rows = new Map<string, Row>()
     for (const c of cats) {
       if (c.kind === 'transfert') continue
-      const base = lineFor(lines, c.id, month)?.amount ?? null
+      const line = lineFor(lines, c.id, month)
+      const items = plan.get(month)?.get(c.id) ?? []
+      // une ligne saisie l'emporte ; sinon le prévu = somme des échéances datées du mois (loyer, salaire…)
+      const fromItems = items.length ? Math.max(0, items.reduce((s, i) => s + (c.kind === 'depense' ? -i.amount : i.amount), 0)) : null
+      const base = line?.amount ?? fromItems
       const exception = exceptions.find((e) => e.categoryId === c.id && e.month === month) ?? null
       if (base === null && !exception) continue
       const cy = c.rollover && c.kind === 'depense' ? (carry.get(c.id) ?? 0) : 0
       const planned = exception?.amount ?? base!
-      rows.set(c.id, { categoryId: c.id, kind: c.kind, base, exception, planned, carry: cy, actual: 0, remaining: 0 })
+      rows.set(c.id, { categoryId: c.id, kind: c.kind, source: line || !items.length ? 'ligne' : 'echeances', items, base, exception, planned, carry: cy, actual: 0, remaining: 0 })
     }
     let unbudgetedExpense = 0, unbudgetedIncome = 0
     for (const [catId, sum] of actuals.get(month) ?? []) {

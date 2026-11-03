@@ -188,3 +188,17 @@ Un petit module remplace next-themes, dont le script en ligne était incompatibl
 - **Tri** :
   - vue mois : du plus grand de (prévu + report, réel) au plus petit, revenus et dépenses séparément ;
   - vue année : du plus gros total annuel au plus petit.
+
+## D39. Une seule source pour chaque chiffre
+- **Échéances datées** (salaire le 28, loyer le 5, crédit le 10…) : elles sont la source unique de ces montants. Le budget les reprend automatiquement, mois par mois, à leur date réelle. Le calendrier, le reste à vivre, les prévisions, les simulations et les alertes lisent les mêmes données.
+- **Modifier un loyer** (depuis le Budget ou les Récurrences) change donc tout à la fois. « À partir de [mois] » arrête l'ancienne échéance le mois précédent et en crée une copie modifiée : les mois passés gardent leur vrai montant.
+- **Priorité** : une ligne de budget saisie à la main pour la même catégorie l'emporte, et l'écran le signale. Une exception d'un mois s'applique par-dessus.
+- **« Proposer un budget »** retranche ce que couvrent déjà les échéances : le loyer n'est pas compté deux fois.
+- **Jour du mois** : il est stocké à part (`day_of_month`). « Le 31 » ou « le dernier jour du mois » donne le 30 novembre, le 28 ou 29 février, etc.
+- **Crédits** : leur mensualité peut devenir une échéance datée, supprimée avec le crédit.
+- **Solde d'un compte** : il est saisi « au [date] » (aujourd'hui par défaut). Les opérations importées d'avant cette date ne s'y ajoutent pas une deuxième fois.
+
+## D40. Icône
+- L'icône vient de l'image fournie (`macos/Resources/icon-source.png`), recadrée au carré.
+- Pour le Mac, elle est découpée selon le gabarit macOS (carré arrondi de 824 px sur 1024). Pour le web et le téléphone, ce sont des carrés pleins (192, 512, 180 et 64 px).
+- Les deux sont générées par `macos/Scripts/make-icon.swift`.

@@ -91,8 +91,8 @@ test('base vierge : aucune donnée, tutoriel de première connexion', async ({ p
   await expect(dlg.getByText('✓ Mon compte LCL')).toBeVisible()
   await dlg.getByRole('button', { name: 'Suivant' }).click()
   await dlg.getByRole('button', { name: 'Suivant' }).click()
-  await dlg.getByLabel(/revenu net mensuel/).fill('2100')
-  await dlg.getByRole('button', { name: 'Enregistrer' }).click()
+  await dlg.getByLabel('Ton salaire net (€)').fill('2100')
+  await dlg.getByRole('button', { name: 'Enregistrer' }).first().click()
   await dlg.getByRole('button', { name: 'Suivant' }).click()
   await dlg.getByRole('button', { name: 'Suivant' }).click()
   await dlg.getByRole('button', { name: 'C’est parti !' }).click()
@@ -104,7 +104,7 @@ test('base vierge : aucune donnée, tutoriel de première connexion', async ({ p
   await page.reload()
   await page.getByLabel('Mot de passe').fill(PW)
   await page.getByRole('button', { name: 'Déverrouiller' }).click()
-  await expect(page.getByRole('heading', { name: 'Accueil' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: 'Comptes' })).toBeVisible({ timeout: 20_000 }) // on revient où on était
   await expect(page.getByRole('dialog')).toHaveCount(0) // le tutoriel ne revient pas
 })
 
@@ -123,4 +123,23 @@ test('budget : nouveaux libellés « tous les mois depuis », triés du plus gro
   expect(order).toEqual(['Courses maison', 'Cadeaux', 'Coiffeur'])
   await page.getByRole('button', { name: 'Mois suivant' }).click()
   await expect(page.getByRole('button', { name: 'Coiffeur', exact: true })).toBeVisible() // valable les mois suivants
+})
+
+test('le loyer saisi une fois, modifié dans le Budget, change partout', async ({ page }) => {
+  await createVault(page, false)
+  const dlg = page.getByRole('dialog')
+  for (let i = 0; i < 3; i++) await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByLabel('Ton loyer ou crédit (€)').fill('850')
+  await dlg.getByRole('button', { name: 'Enregistrer' }).nth(1).click()
+  await dlg.getByRole('button', { name: 'Passer le tutoriel' }).click()
+  await nav(page, 'budget')
+  const line = page.getByRole('button', { name: /^Logement › Loyer \/ crédit/ })
+  await expect(line).toContainText('Loyer 850,00 € le 5')
+  await line.click()
+  await page.getByLabel('Montant de Loyer').fill('900')
+  await page.getByRole('button', { name: 'Enregistrer' }).click()
+  await expect(line).toContainText('Loyer 900,00 €')
+  await nav(page, 'recurrences')
+  await expect(page.getByText('-900,00 €').first()).toBeVisible()
+  await expect(page.getByText(/Mensuel, le 5/)).toBeVisible()
 })

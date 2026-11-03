@@ -16,6 +16,7 @@ export const account = sqliteTable('account', {
   type: text('type', { enum: ACCOUNT_TYPES }).notNull(),
   currency: text('currency').notNull().default('EUR'),
   openingBalance: integer('opening_balance').notNull().default(0), // centimes, devise du compte
+  balanceDate: text('balance_date'), // si renseignée : openingBalance est le solde à cette date (sinon : avant toute opération)
   bank: text('bank'),
   archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   ...stamps,
@@ -118,10 +119,12 @@ export const recurring = sqliteTable('recurring', {
   amount: integer('amount').notNull(), // centimes EUR, signé (négatif = sortie)
   freq: text('freq', { enum: ['week', 'month', 'year'] }).notNull(),
   interval: integer('interval').notNull().default(1),
-  startDate: text('start_date').notNull(), // première échéance ; fixe le jour de prélèvement
+  startDate: text('start_date').notNull(), // première échéance (date valide)
+  dayOfMonth: integer('day_of_month'), // jour voulu (1-31 ; 31 = dernier jour), ramené à la fin des mois courts
   endDate: text('end_date'),
   pattern: text('pattern'), // motif du libellé pour reconnaître les prélèvements
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  debtId: text('debt_id'), // mensualité d'un crédit (supprimée avec lui)
   ...stamps,
 })
 

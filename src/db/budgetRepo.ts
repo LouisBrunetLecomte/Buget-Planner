@@ -3,10 +3,10 @@ import type { Db } from './client'
 import { account, budgetException, budgetLine, category, recurring, transaction, transactionSplit } from './schema'
 import { balances, cachedRates, getSetting, listCategories, putSetting, transferSuggestions } from './repo'
 import { normalizeLabel } from '@/core/labels'
-import { addDays, addMonths, endOfMonth } from '@/core/dates'
+import { addDays, addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
 import { rateOn } from '@/core/fx'
 import { detectRecurring, matchOccurrences, monthlyEquivalent, occurrences, priceIncrease, type MatchTx, type Suggestion } from '@/core/recurring'
-import { applyScope, computeBudget, type Actuals, type Scope } from '@/core/budget'
+import { applyScope, computeBudget, type Actuals, type PlannedItem, type RecurringPlan, type Scope } from '@/core/budget'
 
 export type Recurring = typeof recurring.$inferSelect
 const now = sql`(datetime('now'))`
@@ -17,6 +17,41 @@ export const createRecurring = (db: Db, v: typeof recurring.$inferInsert) => db.
 export const updateRecurring = (db: Db, id: string, v: Partial<typeof recurring.$inferInsert>) =>
   db.update(recurring).set({ ...v, updatedAt: now }).where(eq(recurring.id, id)).run()
 export const deleteRecurring = (db: Db, id: string) => db.delete(recurring).where(eq(recurring.id, id)).run()
+
+/**
+ * Modifie une échéance « à partir d'un mois » sans réécrire le passé : l'ancienne s'arrête le mois précédent,
+ * une copie modifiée prend le relais. Si le mois est celui du début (ou avant), modification sur place.
+ */
+export function updateRecurringFrom(db: Db, id: string, fromMonth: string, patch: { amount?: number; day?: number; name?: string }) {
+  const r = db.select().from(recurring).where(eq(recurring.id, id)).get()
+  if (!r) throw new Error('Échéance introuvable')
+  const clamp = (m: string, d: number) => `${m}-${String(Math.min(d, daysInMonth(m))).padStart(2, '0')}`
+  const v = {
+    ...(patch.amount !== undefined ? { amount: patch.amount } : {}), ...(patch.name ? { name: patch.name } : {}),
+    ...(patch.day ? { dayOfMonth: patch.day } : {}),
+  }
+  if (fromMonth <= monthOf(r.startDate))
+    return db.update(recurring).set({ ...v, ...(patch.day ? { startDate: clamp(monthOf(r.startDate), patch.day) } : {}), updatedAt: now }).where(eq(recurring.id, id)).run()
+  const next = occurrences(r, `${fromMonth}-01`, addDays(`${fromMonth}-01`, 800))[0]
+  if (!next) throw new Error('Plus aucune échéance après cette date')
+  db.update(recurring).set({ endDate: endOfMonth(addMonths(fromMonth, -1)), updatedAt: now }).where(eq(recurring.id, id)).run()
+  const { id: _old, createdAt: _c, updatedAt: _u, ...copy } = r
+  void _old; void _c; void _u
+  return db.insert(recurring).values({ ...copy, ...v, startDate: patch.day ? clamp(monthOf(next), patch.day) : next }).returning().get()
+}
+
+/** Échéances datées de chaque mois, rangées par catégorie : elles alimentent directement le budget. */
+export function recurringPlan(db: Db, from: string, to: string): RecurringPlan {
+  const plan: RecurringPlan = new Map()
+  for (const r of listRecurring(db).filter((x) => x.active && x.categoryId)) {
+    for (const date of occurrences(r, `${from}-01`, endOfMonth(to))) {
+      const m = plan.get(monthOf(date)) ?? new Map<string, PlannedItem[]>()
+      m.set(r.categoryId!, [...(m.get(r.categoryId!) ?? []), { id: r.id, name: r.name, date, amount: r.amount }])
+      plan.set(monthOf(date), m)
+    }
+  }
+  return plan
+}
 
 /** Opérations qui correspondent à une récurrence : même motif, même sens, même compte si précisé. */
 function matchingTxs(db: Db, r: Recurring): MatchTx[] {
@@ -112,7 +147,7 @@ export function getBudget(db: Db, from: string, to: string) {
   const start = budgetStart(db) ?? from
   const first = start < from ? start : from
   const cats = listCategories(db)
-  const months = computeBudget(cats, db.select().from(budgetLine).all(), db.select().from(budgetException).all(), actualsBetween(db, first, to), first, to)
+  const months = computeBudget(cats, db.select().from(budgetLine).all(), db.select().from(budgetException).all(), actualsBetween(db, first, to), first, to, recurringPlan(db, first, to))
   return months.filter((m) => m.month >= from)
 }
 
@@ -148,7 +183,7 @@ export const setCategoryOptions = (db: Db, id: string, v: { rollover?: boolean; 
 
 /**
  * Premier budget proposé : moyenne des 3 derniers mois complets par catégorie principale (arrondie à 10 € au-dessus),
- * plus la provision mensuelle des charges annuelles non vues sur la période.
+ * moins ce que couvrent déjà les échéances datées de cette catégorie (loyer, abonnements…) : pas de double compte.
  */
 export function suggestBudget(db: Db, month: string): { categoryId: string; amount: number }[] {
   const cats = listCategories(db), root = (id: string) => { const c = cats.find((x) => x.id === id); return c?.parentId ?? c?.id }
@@ -158,15 +193,16 @@ export function suggestBudget(db: Db, month: string): { categoryId: string; amou
     const r = c && root(c)
     if (r) sums.set(r, (sums.get(r) ?? 0) + s)
   }
-  for (const r of listRecurring(db).filter((x) => x.active && x.freq === 'year' && x.categoryId)) {
-    const seen = occurrences(r, `${from}-01`, endOfMonth(to)).length
-    if (!seen) { const k = root(r.categoryId!)!; sums.set(k, (sums.get(k) ?? 0) + monthlyEquivalent(r, r.amount) * 3) }
+  const covered = new Map<string, number>()
+  for (const r of listRecurring(db).filter((x) => x.active && x.categoryId)) {
+    const k = root(r.categoryId!)!
+    covered.set(k, (covered.get(k) ?? 0) + Math.abs(monthlyEquivalent(r, r.amount)))
   }
   const out: { categoryId: string; amount: number }[] = []
   for (const [id, s] of sums) {
     const c = cats.find((x) => x.id === id)
     if (!c || c.kind === 'transfert') continue
-    const avg = Math.abs(s) / 3
+    const avg = Math.abs(s) / 3 - (covered.get(id) ?? 0)
     if (avg >= 500) out.push({ categoryId: id, amount: Math.ceil(avg / 1000) * 1000 })
   }
   return out

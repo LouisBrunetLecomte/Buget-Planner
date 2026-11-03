@@ -18,7 +18,7 @@ cp "$BIN" "$APP/Contents/MacOS/Buget"
 cp -R "$ROOT/dist" "$APP/Contents/Resources/web"
 
 TMP="$(mktemp -d)"
-swift "$MAC/Scripts/make-icon.swift" "$TMP" >&2
+swift "$MAC/Scripts/make-icon.swift" "$MAC/Resources/icon-source.png" "$TMP" >&2
 iconutil -c icns "$TMP/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$TMP"
 

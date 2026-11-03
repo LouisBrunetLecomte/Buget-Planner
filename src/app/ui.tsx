@@ -101,3 +101,18 @@ export function useRoute(): string {
   }, [])
   return r
 }
+
+/** Jour du mois (1 à 31) ; 31 = « dernier jour du mois », ramené à 30, 29 ou 28 selon le mois. */
+export function DaySelect({ value, onChange, id, allowNone, className }: { value: number | null; onChange: (d: number | null) => void; id?: string; allowNone?: boolean; className?: string }) {
+  return (
+    <Select value={value ? String(value) : NONE} onValueChange={(v) => onChange(v === NONE ? null : Number(v))}>
+      <SelectTrigger id={id} aria-label={id ? undefined : 'Jour du mois'} className={cn('w-full', className)}><SelectValue placeholder="Jour" /></SelectTrigger>
+      <SelectContent>
+        {allowNone && <SelectItem value={NONE}>Pas de date précise</SelectItem>}
+        {Array.from({ length: 30 }, (_, i) => i + 1).map((d) => <SelectItem key={d} value={String(d)}>le {d === 1 ? '1er' : d}</SelectItem>)}
+        <SelectItem value="31">le dernier jour du mois</SelectItem>
+      </SelectContent>
+    </Select>
+  )
+}
+export const dayLabel = (d: number) => (d >= 31 ? 'le dernier jour' : d === 1 ? 'le 1er' : `le ${d}`)

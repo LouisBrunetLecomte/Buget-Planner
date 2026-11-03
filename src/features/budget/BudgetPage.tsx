@@ -5,12 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { addMonths, endOfMonth, monthOf, monthsBetween, today } from '@/core/dates'
+import { addMonths, daysInMonth, endOfMonth, monthOf, monthsBetween, today } from '@/core/dates'
 import { projectBalances, resteAVivre, type MonthBudget, type Row } from '@/core/budget'
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
-import { attempt, CategorySelect, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { attempt, CategorySelect, DaySelect, Empty, Money, PageHeader, useCategories } from '@/app/ui'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -79,6 +79,12 @@ function RowLine({ r, onEdit, month }: { r: Row; onEdit: () => void; month: stri
         <span className="font-medium">{label(r.categoryId)}</span>
         {r.exception && <Badge variant="secondary" className="ml-2">Exception{r.exception.reason ? ` : ${r.exception.reason}` : ''}</Badge>}
         {r.carry !== 0 && <span className="ml-2 text-xs text-muted-foreground">report {formatMoney(r.carry)}</span>}
+        {r.items.length > 0 && (
+          <span className="block text-xs text-muted-foreground">
+            {r.items.map((i) => `${i.name} ${formatMoney(Math.abs(i.amount))} le ${new Date(i.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`).join(' · ')}
+            {r.source === 'ligne' && ' (montant saisi utilisé à la place)'}
+          </span>
+        )}
       </button>
       <span className="text-right text-sm tabular-nums md:order-none">
         <span className="md:hidden"><Money cents={r.actual} colored={false} /> / </span>
@@ -101,6 +107,7 @@ function RowLine({ r, onEdit, month }: { r: Row; onEdit: () => void; month: stri
 function NewLine({ month }: { month: string }) {
   const { all } = useCategories()
   const [label, setLabel] = useState(''), [kind, setKind] = useState<'depense' | 'revenu'>('depense'), [amount, setAmount] = useState(''), [from, setFrom] = useState(month)
+  const [day, setDay] = useState<number | null>(null)
   function add() {
     const name = label.trim(), cents = parseAmount(amount)
     if (!name) return toast.error('Donne un libellé')
@@ -108,13 +115,16 @@ function NewLine({ month }: { month: string }) {
     const ok = attempt(() => mutate((d) => {
       const existing = all.find((c) => c.name.toLowerCase() === name.toLowerCase() && c.kind === kind)
       const id = existing?.id ?? createCategory(d, { name, kind }).id
-      b.setBudget(d, id, from, cents, 'from')
+      // avec une date : c'est une échéance (calendrier, reste à vivre, alertes la voient) ; sans : un simple montant mensuel
+      if (day) b.createRecurring(d, { name, kind: kind === 'revenu' ? 'revenu' : 'charge', amount: kind === 'revenu' ? cents : -cents, freq: 'month', interval: 1,
+        startDate: `${from}-${String(Math.min(day, daysInMonth(from))).padStart(2, '0')}`, dayOfMonth: day, categoryId: id })
+      else b.setBudget(d, id, from, cents, 'from')
       return true
     }, { label: `Budget : ${name}` }), `« ${name} » ajouté au budget à partir de ${monthName(from)}`)
-    if (ok) { setLabel(''); setAmount('') }
+    if (ok) { setLabel(''); setAmount(''); setDay(null) }
   }
   return (
-    <form aria-label="Nouvelle ligne de budget" className="grid gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_9rem_8rem_auto_auto] md:items-end" onSubmit={(e) => { e.preventDefault(); add() }}>
+    <form aria-label="Nouvelle ligne de budget" className="grid gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_8rem_7rem_11rem_auto_auto] md:items-end" onSubmit={(e) => { e.preventDefault(); add() }}>
       <div className="grid gap-1"><Label htmlFor="nl-l">Nouveau libellé</Label><Input id="nl-l" placeholder="ex : Cadeaux, Coiffeur, Prime…" value={label} onChange={(e) => setLabel(e.target.value)} /></div>
       <div className="grid gap-1"><Label htmlFor="nl-k">Type</Label>
         <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
@@ -123,6 +133,7 @@ function NewLine({ month }: { month: string }) {
         </Select>
       </div>
       <div className="grid gap-1"><Label htmlFor="nl-a">Montant (€)</Label><Input id="nl-a" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+      <div className="grid gap-1"><Label htmlFor="nl-d">Date précise</Label><DaySelect id="nl-d" value={day} onChange={setDay} allowNone /></div>
       <div className="grid gap-1"><Label htmlFor="nl-f">Tous les mois depuis</Label><Input id="nl-f" type="month" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} /></div>
       <Button type="submit">Ajouter</Button>
     </form>

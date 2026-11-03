@@ -13,7 +13,7 @@ import { amortize, paymentFor, payoffPlan } from '@/core/debt'
 import { formatMoney, parseAmount } from '@/core/money'
 import * as p from '@/db/planningRepo'
 import { mutate, useDb } from '@/app/store'
-import { AccountSelect, attempt, Empty, Money, PageHeader } from '@/app/ui'
+import { AccountSelect, attempt, DaySelect, Empty, Money, PageHeader } from '@/app/ui'
 
 const money = (s: string) => { const v = parseAmount(s); if (v === null || v < 0) throw new Error('Montant invalide'); return v }
 const pct = (s: string) => { const v = Number(s.replace(',', '.')); if (!(v >= 0 && v < 100)) throw new Error('Taux invalide'); return v }
@@ -158,7 +158,7 @@ function Debts() {
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const debts = useMemo(() => p.listDebts(db), [db, version])
-  const [f, setF] = useState({ name: '', principal: '', rate: '', months: '', start: monthOf(today()) })
+  const [f, setF] = useState({ name: '', principal: '', rate: '', months: '', start: monthOf(today()) }), [payDay, setPayDay] = useState<number | null>(5)
   const [extra, setExtra] = useState('100')
   const plans = useMemo(() => {
     const cur = monthOf(today())
@@ -169,12 +169,13 @@ function Debts() {
   }, [debts, extra])
   return (
     <div className="grid gap-4">
-      <form className="grid grid-cols-2 gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_8rem_6rem_7rem_9rem_auto]" onSubmit={(e) => {
+      <form className="grid grid-cols-2 gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_8rem_6rem_7rem_9rem_10rem_auto]" onSubmit={(e) => {
         e.preventDefault()
         const ok = attempt(() => {
           const principal = money(f.principal), rate = pct(f.rate), months = Number(f.months)
           if (!(months > 0 && months <= 600)) throw new Error('Durée invalide (en mois)')
-          return mutate((d) => p.createDebt(d, { name: f.name.trim(), principal, rate, payment: paymentFor(principal, rate, months), startMonth: f.start }))
+          // avec un jour : la mensualité rejoint les charges fixes (budget, calendrier, reste à vivre)
+          return mutate((d) => p.createDebt(d, { name: f.name.trim(), principal, rate, payment: paymentFor(principal, rate, months), startMonth: f.start }, payDay ?? undefined))
         }, 'Crédit ajouté')
         if (ok) setF({ ...f, name: '', principal: '', rate: '', months: '' })
       }}>
@@ -183,6 +184,7 @@ function Debts() {
         <Input aria-label="Taux annuel" placeholder="Taux %" inputMode="decimal" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} required />
         <Input aria-label="Durée en mois" placeholder="Durée (mois)" type="number" value={f.months} onChange={(e) => setF({ ...f, months: e.target.value })} required />
         <Input aria-label="Première échéance" type="month" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} required />
+        <DaySelect value={payDay} onChange={setPayDay} allowNone />
         <Button type="submit">Ajouter</Button>
       </form>
       {!debts.length ? <Empty>Aucun crédit. Ajoute-en un pour voir son tableau d’amortissement et simuler un remboursement anticipé.</Empty>

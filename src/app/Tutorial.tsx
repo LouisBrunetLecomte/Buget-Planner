@@ -6,15 +6,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { monthOf, today } from '@/core/dates'
+import { daysInMonth, monthOf, today } from '@/core/dates'
 import { formatMoney, parseAmount } from '@/core/money'
 import { ACCOUNT_TYPES } from '@/db/schema'
 import * as repo from '@/db/repo'
-import { setBudget } from '@/db/budgetRepo'
+import { createRecurring } from '@/db/budgetRepo'
 import { exportBackup, mutate, useDb } from './store'
 import { hasTouchIdBridge } from './macAuth'
 import { download } from './files'
-import { attempt, useAccounts } from './ui'
+import { attempt, dayLabel, DaySelect, useAccounts } from './ui'
 
 const TYPE: Record<(typeof ACCOUNT_TYPES)[number], string> = { courant: 'Compte courant', epargne: 'Épargne (livret…)', carte: 'Carte (Revolut…)', especes: 'Espèces', credit: 'Crédit', investissement: 'Investissement' }
 
@@ -25,7 +25,7 @@ export function Tutorial() {
   const accounts = useAccounts()
   const [step, setStep] = useState(0)
   const [name, setName] = useState('Compte courant'), [type, setType] = useState<(typeof ACCOUNT_TYPES)[number]>('courant'), [balance, setBalance] = useState('')
-  const [income, setIncome] = useState('')
+  const [income, setIncome] = useState(''), [payDay, setPayDay] = useState<number | null>(28), [rent, setRent] = useState(''), [rentDay, setRentDay] = useState<number | null>(5)
   const [then, setThen] = useState('#/accueil')
   if (repo.getSetting<boolean>(db, 'tutorialDone')) return null
 
@@ -33,15 +33,18 @@ export function Tutorial() {
   function addAccount() {
     const cents = balance.trim() ? parseAmount(balance) : 0
     if (!name.trim() || cents === null) return toast.error('Nom ou solde invalide')
-    if (attempt(() => mutate((d) => repo.createAccount(d, { name: name.trim(), type, openingBalance: cents }), { label: `Compte ${name.trim()}` }), `« ${name.trim()} » ajouté`)) { setName(''); setBalance('') }
+    if (attempt(() => mutate((d) => repo.createAccount(d, { name: name.trim(), type, openingBalance: cents, balanceDate: today() }), { label: `Compte ${name.trim()}` }), `« ${name.trim()} » ajouté`)) { setName(''); setBalance('') }
   }
-  function addIncome() {
-    const cents = parseAmount(income)
-    const salaire = repo.listCategories(db).find((c) => c.name === 'Salaire')
-    if (!cents || cents <= 0 || !salaire) return toast.error('Montant invalide')
-    if (attempt(() => mutate((d) => setBudget(d, salaire.id, monthOf(today()), cents, 'from'), { label: 'Budget : Salaire' }), `Revenu de ${formatMoney(cents)} par mois enregistré`)) setIncome('')
+  /** Salaire et loyer deviennent des échéances datées : budget, calendrier, reste à vivre et alertes les utilisent tous. */
+  function addDated(kind: 'revenu' | 'charge', label: string, catName: string, value: string, day: number | null) {
+    const cents = parseAmount(value)
+    const cat = repo.listCategories(db).find((c) => c.name === catName)
+    if (!cents || cents <= 0) { toast.error('Montant invalide'); return false }
+    if (!day) { toast.error('Choisis le jour'); return false }
+    const m = monthOf(today())
+    return !!attempt(() => mutate((d) => createRecurring(d, { name: label, kind, amount: kind === 'revenu' ? cents : -cents, freq: 'month', interval: 1,
+      startDate: `${m}-${String(Math.min(day, daysInMonth(m))).padStart(2, '0')}`, dayOfMonth: day, categoryId: cat?.id ?? null }), { label }), `${label} : ${formatMoney(cents)} ${dayLabel(day)} de chaque mois`)
   }
-
   const steps: { title: string; body: React.ReactNode }[] = [
     {
       title: 'Bienvenue dans Buget 👋',
@@ -92,11 +95,18 @@ export function Tutorial() {
       title: '3. Ton budget',
       body: (
         <div className="grid gap-3 text-sm">
-          <p className="text-muted-foreground">Dans l’onglet <strong>Budget</strong>, tu fixes un montant par catégorie ou par libellé que tu crées (« Cadeaux », « Coiffeur »…), valable <strong>tous les mois à partir de la date que tu choisis</strong>. Pour un mois particulier (vacances, Noël), crée une <strong>exception</strong> : le reste ne bouge pas.</p>
-          <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); addIncome() }}>
-            <div className="grid gap-1"><Label htmlFor="tu-i">Pour commencer : ton revenu net mensuel (€)</Label><Input id="tu-i" inputMode="decimal" placeholder="2 100,00" value={income} onChange={(e) => setIncome(e.target.value)} /></div>
+          <p className="text-muted-foreground">Dans l’onglet <strong>Budget</strong>, tu fixes un montant par catégorie ou par libellé (« Cadeaux », « Coiffeur »…), <strong>tous les mois à partir de la date que tu choisis</strong>, avec un jour précis si tu veux. Pour un mois particulier (vacances, Noël), crée une <strong>exception</strong>.</p>
+          <form className="grid grid-cols-[1fr_11rem_auto] items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (addDated('revenu', 'Salaire', 'Salaire', income, payDay)) setIncome('') }}>
+            <div className="grid gap-1"><Label htmlFor="tu-i">Ton salaire net (€)</Label><Input id="tu-i" inputMode="decimal" placeholder="2 100,00" value={income} onChange={(e) => setIncome(e.target.value)} /></div>
+            <div className="grid gap-1"><Label htmlFor="tu-id">Il arrive</Label><DaySelect id="tu-id" value={payDay} onChange={setPayDay} /></div>
             <Button type="submit" variant="secondary">Enregistrer</Button>
           </form>
+          <form className="grid grid-cols-[1fr_11rem_auto] items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (addDated('charge', 'Loyer', 'Loyer / crédit', rent, rentDay)) setRent('') }}>
+            <div className="grid gap-1"><Label htmlFor="tu-r">Ton loyer ou crédit (€)</Label><Input id="tu-r" inputMode="decimal" placeholder="850,00" value={rent} onChange={(e) => setRent(e.target.value)} /></div>
+            <div className="grid gap-1"><Label htmlFor="tu-rd">Prélevé</Label><DaySelect id="tu-rd" value={rentDay} onChange={setRentDay} /></div>
+            <Button type="submit" variant="secondary">Enregistrer</Button>
+          </form>
+          <p className="text-xs text-muted-foreground">Ces montants sont saisis une seule fois : si ton loyer change, modifie-le n’importe où (Budget ou Récurrences) et tout suit.</p>
         </div>
       ),
     },

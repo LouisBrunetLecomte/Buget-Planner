@@ -9,7 +9,7 @@ import type { Row, Scope } from '@/core/budget'
 import { parseAmount } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate } from '@/app/store'
-import { attempt, useCategories } from '@/app/ui'
+import { attempt, DaySelect, useCategories } from '@/app/ui'
 
 export const monthName = (m: string) => new Date(`${m}-15`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
@@ -22,7 +22,27 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
   const [fromMonth, setFromMonth] = useState(month)
   const [rollover, setRollover] = useState(cat.rollover), [bucket, setBucket] = useState(cat.bucket ?? 'none')
 
+  // ligne calculée depuis des échéances datées : on modifie les échéances elles-mêmes (une seule source)
+  const fromItems = row?.source === 'echeances' ? [...new Map(row.items.map((i) => [i.id, i])).values()] : []
+  const [itemEdits, setItemEdits] = useState(() => fromItems.map((i) => ({ id: i.id, name: i.name, amount: (Math.abs(i.amount) / 100).toFixed(2).replace('.', ','), day: Number(i.date.slice(8, 10)), sign: Math.sign(i.amount) })))
+  const sourceMode = fromItems.length > 0 && scope !== 'month'
+
   function save() {
+    if (sourceMode) {
+      const ok = attempt(() => mutate((d) => {
+        for (const e of itemEdits) {
+          const c = parseAmount(e.amount)
+          if (c === null || c < 0) throw new Error(`Montant invalide pour ${e.name}`)
+          const orig = fromItems.find((i) => i.id === e.id)!
+          if (c * e.sign !== orig.amount || e.day !== Number(orig.date.slice(8, 10)))
+            b.updateRecurringFrom(d, e.id, scope === 'all' ? '0000-01' : fromMonth, { amount: c * e.sign, day: e.day })
+        }
+        b.setCategoryOptions(d, categoryId, { rollover, bucket: bucket === 'none' ? null : bucket as 'besoin' | 'envie' })
+        return true
+      }, { label: `Échéances : ${label(categoryId)}` }), 'Mis à jour partout (récurrences, calendrier, prévisions)')
+      if (ok) onClose()
+      return
+    }
     const cents = parseAmount(amount)
     if (cents === null || cents < 0) return attempt(() => { throw new Error('Montant invalide') })
     const ok = attempt(() => mutate((d) => {
@@ -45,7 +65,22 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
           <DialogDescription>{monthName(month)}{row?.base != null && row.exception ? ` · modèle : ${(row.base / 100).toFixed(2)} €` : ''}</DialogDescription>
         </DialogHeader>
         <form id="bform" className="grid gap-3" onSubmit={(e) => { e.preventDefault(); save() }}>
-          <div className="grid gap-1.5"><Label htmlFor="ba">{cat.kind === 'revenu' ? 'Revenu prévu (€)' : 'Budget (€)'}</Label><Input id="ba" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus required /></div>
+          {sourceMode ? (
+            <fieldset className="grid gap-2">
+              <legend className="mb-1 text-sm font-medium">Échéances de cette ligne</legend>
+              {itemEdits.map((e, k) => (
+                <div key={e.id} className="grid grid-cols-[1fr_7rem_10rem] items-center gap-2 text-sm">
+                  <span className="truncate">{e.name}</span>
+                  <Input aria-label={`Montant de ${e.name}`} inputMode="decimal" value={e.amount} onChange={(ev) => setItemEdits(itemEdits.map((x, j) => (j === k ? { ...x, amount: ev.target.value } : x)))} />
+                  <DaySelect value={e.day} onChange={(dd) => dd && setItemEdits(itemEdits.map((x, j) => (j === k ? { ...x, day: dd } : x)))} />
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">Ces montants viennent de tes charges fixes et revenus datés : les changer ici les change aussi dans Récurrences, le calendrier, le reste à vivre et les prévisions.</p>
+            </fieldset>
+          ) : (
+            <div className="grid gap-1.5"><Label htmlFor="ba">{cat.kind === 'revenu' ? 'Revenu prévu (€)' : 'Budget (€)'}</Label><Input id="ba" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus required /></div>
+          )}
+          {fromItems.length > 0 && scope === 'month' && <p className="-mt-1 text-xs text-muted-foreground">Exception : seul le total de ce mois change, tes échéances restent identiques.</p>}
           <fieldset className="grid gap-2">
             <legend className="mb-1 text-sm font-medium">Appliquer à</legend>
             {scopes.map(([v, t, d]) => (
@@ -71,7 +106,7 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
           )}
         </form>
         <DialogFooter className="gap-2 sm:justify-between">
-          {row ? <Button variant="destructive" onClick={() => { if (confirm('Retirer cette catégorie du budget, sur tous les mois ?')) { mutate((d) => b.removeBudget(d, categoryId)); onClose() } }}>Retirer du budget</Button> : <span />}
+          {row && row.source === 'ligne' ? <Button variant="destructive" onClick={() => { if (confirm('Retirer cette catégorie du budget, sur tous les mois ?')) { mutate((d) => b.removeBudget(d, categoryId)); onClose() } }}>Retirer du budget</Button> : <span />}
           <Button type="submit" form="bform">Enregistrer</Button>
         </DialogFooter>
       </DialogContent>

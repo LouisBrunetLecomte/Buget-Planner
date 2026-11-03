@@ -1,10 +1,10 @@
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import type { Db } from './client'
-import { asset, assetValue, debt, goal, goalContribution, savingsRule, scenario, transaction } from './schema'
-import { balances, listAccounts } from './repo'
+import { asset, assetValue, debt, goal, goalContribution, recurring, savingsRule, scenario, transaction } from './schema'
+import { balances, listAccounts, listCategories } from './repo'
 import { getBudget, occurrencesBetween, listRecurring, liquidBalance, totalBalance } from './budgetRepo'
 import { balanceHistory } from './analyticsRepo'
-import { addMonths, endOfMonth, monthOf } from '@/core/dates'
+import { addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
 import { amortize, balanceAt, type Loan } from '@/core/debt'
 import { dailyForecast, roundUp, simulate, suggestedMonthly, type Change } from '@/core/planning'
 import { monthEnds } from '@/core/analytics'
@@ -51,9 +51,22 @@ export function savingsRuleAmounts(db: Db, month: string) {
 
 // ---------- dettes ----------
 export const listDebts = (db: Db) => db.select().from(debt).orderBy(debt.name).all()
-export const createDebt = (db: Db, v: typeof debt.$inferInsert) => { amortize(toLoan(v as Debt)); return db.insert(debt).values(v).returning().get() }
+/** Crée un crédit ; si `day` est donné, sa mensualité devient une charge fixe datée (budget, calendrier, alertes la voient). */
+export function createDebt(db: Db, v: typeof debt.$inferInsert, day?: number) {
+  const rows = amortize(toLoan(v as Debt))
+  const d = db.insert(debt).values(v).returning().get()
+  if (day) {
+    const cat = listCategories(db).find((c) => c.name === 'Loyer / crédit')
+    db.insert(recurring).values({ name: `Crédit : ${d.name}`, kind: 'charge', amount: -d.payment, freq: 'month', interval: 1,
+      startDate: `${d.startMonth}-${String(Math.min(day, daysInMonth(d.startMonth))).padStart(2, '0')}`, dayOfMonth: day, endDate: endOfMonth(rows.at(-1)!.month), categoryId: cat?.id ?? null, debtId: d.id }).run()
+  }
+  return d
+}
 export const updateDebt = (db: Db, id: string, v: Partial<typeof debt.$inferInsert>) => db.update(debt).set({ ...v, updatedAt: now }).where(eq(debt.id, id)).run()
-export const deleteDebt = (db: Db, id: string) => db.delete(debt).where(eq(debt.id, id)).run()
+export function deleteDebt(db: Db, id: string) {
+  db.delete(recurring).where(eq(recurring.debtId, id)).run() // sa mensualité disparaît des charges fixes
+  db.delete(debt).where(eq(debt.id, id)).run()
+}
 export const toLoan = (d: Pick<Debt, 'principal' | 'rate' | 'payment' | 'startMonth' | 'extraMonthly'>): Loan =>
   ({ principal: d.principal, rate: d.rate, payment: d.payment, startMonth: d.startMonth, extraMonthly: d.extraMonthly })
 export const debtBalanceAt = (d: Debt, month: string) => balanceAt(toLoan(d), month)

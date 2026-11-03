@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { parseAmount } from '@/core/money'
 import { totalBalance } from '@/db/budgetRepo'
+import { today } from '@/core/dates'
 import { ACCOUNT_TYPES } from '@/db/schema'
 import * as repo from '@/db/repo'
 import { mutate, useDb } from '@/app/store'
@@ -19,12 +20,14 @@ function AccountDialog({ acc, onClose }: { acc: repo.Account | null; onClose: ()
   const [name, setName] = useState(acc?.name ?? ''), [type, setType] = useState<repo.Account['type']>(acc?.type ?? 'courant')
   const [currency, setCurrency] = useState(acc?.currency ?? 'EUR'), [bank, setBank] = useState(acc?.bank ?? '')
   const [opening, setOpening] = useState(acc ? (acc.openingBalance / 100).toFixed(2).replace('.', ',') : '0')
+  // nouveau compte : on saisit le solde du jour ; les opérations importées d'avant ne s'y ajoutent pas une 2e fois
+  const [balanceDate, setBalanceDate] = useState(acc ? (acc.balanceDate ?? '') : today())
   function save() {
     const cents = parseAmount(opening)
     if (cents === null) return attempt(() => { throw new Error('Solde initial illisible') })
     const cur = currency.trim().toUpperCase()
     if (!/^[A-Z]{3}$/.test(cur)) return attempt(() => { throw new Error('Devise : code ISO à 3 lettres (EUR, USD…)') })
-    const v = { name: name.trim(), type, currency: cur, bank: bank.trim() || null, openingBalance: cents }
+    const v = { name: name.trim(), type, currency: cur, bank: bank.trim() || null, openingBalance: cents, balanceDate: balanceDate || null }
     const ok = attempt(() => mutate((d) => acc ? repo.updateAccount(d, acc.id, v) : repo.createAccount(d, v)), acc ? 'Compte modifié' : 'Compte créé')
     if (ok) onClose()
   }
@@ -45,9 +48,13 @@ function AccountDialog({ acc, onClose }: { acc: repo.Account | null; onClose: ()
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5"><Label htmlFor="ab">Banque</Label><Input id="ab" value={bank} onChange={(e) => setBank(e.target.value)} /></div>
-            <div className="grid gap-1.5"><Label htmlFor="ao">Solde initial</Label><Input id="ao" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} /></div>
+            <span />
           </div>
-          <p className="text-xs text-muted-foreground">Le solde initial est celui d’avant la première opération enregistrée.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5"><Label htmlFor="ao">Solde</Label><Input id="ao" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} /></div>
+            <div className="grid gap-1.5"><Label htmlFor="ad">au</Label><Input id="ad" type="date" value={balanceDate} onChange={(e) => setBalanceDate(e.target.value)} /></div>
+          </div>
+          <p className="text-xs text-muted-foreground">Le solde que t’indique ta banque à cette date. Toutes les opérations, d’avant comme d’après, sont ensuite recalculées autour. Sans date : solde d’avant la toute première opération.</p>
         </form>
         <DialogFooter className="gap-2 sm:justify-between">
           {acc ? <div className="flex gap-2">

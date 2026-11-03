@@ -1,7 +1,7 @@
 import { addDays, addMonths, daysBetween, daysInMonth, monthOf } from './dates'
 
 export type Freq = 'week' | 'month' | 'year'
-export interface Schedule { freq: Freq; interval: number; startDate: string; endDate: string | null }
+export interface Schedule { freq: Freq; interval: number; startDate: string; endDate: string | null; dayOfMonth?: number | null }
 
 /** Échéances entre from et to inclus. Le jour du mois est conservé, ramené au dernier jour si le mois est court (31 → 30/28). */
 export function occurrences(s: Schedule, from: string, to: string): string[] {
@@ -15,7 +15,7 @@ export function occurrences(s: Schedule, from: string, to: string): string[] {
     return out
   }
   const months = s.freq === 'year' ? 12 * step : step
-  const day = Number(s.startDate.slice(8, 10))
+  const day = s.dayOfMonth ?? Number(s.startDate.slice(8, 10))
   for (let k = 0; ; k++) {
     const m = addMonths(monthOf(s.startDate), k * months)
     const d = `${m}-${String(Math.min(day, daysInMonth(m))).padStart(2, '0')}`

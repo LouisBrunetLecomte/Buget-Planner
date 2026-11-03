@@ -1,7 +1,7 @@
 import { eq, gte, inArray, lte, and, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { account, transaction } from './schema'
-import { cachedRates, getSetting, listCategories, putSetting } from './repo'
+import { balances, cachedRates, effectiveOpenings, getSetting, listCategories, putSetting } from './repo'
 import { actualsBetween, getBudget, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
 import { addDays, addMonths, endOfMonth, monthOf } from '@/core/dates'
 import { rateOn } from '@/core/fx'
@@ -22,7 +22,8 @@ const toEur = (db: Db, currency: string, cents: number) => currency === 'EUR' ? 
 export function balanceHistory(db: Db, from: string, to: string, liquidOnly = false) {
   const accs = accountsIn(db, liquidOnly), ids = accs.map((a) => a.id)
   if (!ids.length) return []
-  const opening = accs.reduce((s, a) => s + toEur(db, a.currency, a.openingBalance), 0)
+  const eff = effectiveOpenings(db)
+  const opening = accs.reduce((s, a) => s + toEur(db, a.currency, eff.get(a.id)!), 0)
   const rows = db.select({ d: transaction.date, c: transaction.currency, s: sql<number>`sum(${transaction.amount})` }).from(transaction)
     .where(and(inArray(transaction.accountId, ids), lte(transaction.date, to))).groupBy(transaction.date, transaction.currency).all()
   let before = 0
@@ -104,8 +105,8 @@ export function health(db: Db, today: string) {
   const last3 = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
   const avgExp = last3.reduce((s, m) => s + m.actualExpense, 0) / Math.max(1, last3.length)
   const reserve = accountsIn(db, false).filter((a) => a.type === 'epargne')
-  const reserveBal = reserve.length ? reserve.reduce((s, a) => s + toEur(db, a.currency, a.openingBalance), 0) +
-    db.select({ s: sql<number>`coalesce(sum(${transaction.amountEur}), 0)` }).from(transaction).where(inArray(transaction.accountId, reserve.map((a) => a.id))).get()!.s : 0
+  const bal = balances(db)
+  const reserveBal = reserve.reduce((s, a) => s + toEur(db, a.currency, bal.get(a.id) ?? 0), 0)
   const lastRows = last3.at(-1)?.rows.filter((r) => r.kind === 'depense' && r.planned + r.carry > 0) ?? []
   const negativeDays = balanceHistory(db, addDays(today, -89), today, true).filter((p) => p.balance < 0).length
   const fees = findAnomaliesFor(db, today).find((a) => a.kind === 'frais')

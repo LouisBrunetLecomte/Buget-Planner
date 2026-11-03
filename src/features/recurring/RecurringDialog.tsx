@@ -6,12 +6,12 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { parseAmount } from '@/core/money'
-import { today } from '@/core/dates'
+import { daysInMonth, monthOf, today } from '@/core/dates'
 import type { Freq } from '@/core/recurring'
 import { RECURRING_KINDS } from '@/db/schema'
 import * as b from '@/db/budgetRepo'
 import { mutate } from '@/app/store'
-import { AccountSelect, attempt, CategorySelect } from '@/app/ui'
+import { AccountSelect, attempt, CategorySelect, DaySelect } from '@/app/ui'
 
 export const KIND_LABEL = { revenu: 'Revenu', charge: 'Charge fixe', abonnement: 'Abonnement' } as const
 const PRESETS: Record<string, [Freq, number]> = { hebdo: ['week', 1], mensuel: ['month', 1], trimestriel: ['month', 3], semestriel: ['month', 6], annuel: ['year', 1] }
@@ -31,14 +31,34 @@ export function RecurringDialog({ draft, onClose }: { draft: RecurringDraft; onC
   const [startDate, setStartDate] = useState(draft.startDate ?? today()), [endDate, setEndDate] = useState(draft.endDate ?? '')
   const [accountId, setAccountId] = useState(draft.accountId ?? null), [categoryId, setCategoryId] = useState(draft.categoryId ?? null)
   const [pattern, setPattern] = useState(draft.pattern ?? ''), [active, setActive] = useState(draft.active ?? true)
+  // date précise : « le 28 de chaque mois » (31 = dernier jour) à partir d'un mois donné
+  const [day, setDay] = useState<number>(draft.dayOfMonth ?? Number((draft.startDate ?? today()).slice(8, 10)))
+  const [startMonth, setStartMonth] = useState(monthOf(draft.startDate ?? today()))
+  const [applyFrom, setApplyFrom] = useState(() => { const c = monthOf(today()), s0 = monthOf(draft.startDate ?? today()); return s0 > c ? s0 : c })
   const preset = Object.entries(PRESETS).find(([, [f, i]]) => f === freq && i === interval)?.[0] ?? 'perso'
 
+  const monthly = freq === 'month'
+  const clamp = (m: string, d: number) => `${m}-${String(Math.min(d, daysInMonth(m))).padStart(2, '0')}`
+  const firstDate = monthly ? clamp(startMonth, day) : startDate
+  const signed = (c: number) => (kind === 'revenu' ? Math.abs(c) : -Math.abs(c))
+  const cents = parseAmount(amount)
+  const timingChanged = !!draft.id && monthly && draft.freq === 'month' && cents !== null &&
+    (signed(cents) !== draft.amount || day !== (draft.dayOfMonth ?? Number(draft.startDate!.slice(8, 10))))
+
   function save() {
-    const cents = parseAmount(amount)
     if (!cents) return attempt(() => { throw new Error('Montant illisible') })
-    if (endDate && endDate < startDate) return attempt(() => { throw new Error('La fin précède le début') })
-    const v = { name: name.trim(), kind, amount: kind === 'revenu' ? Math.abs(cents) : -Math.abs(cents), freq, interval: Math.max(1, interval), startDate, endDate: endDate || null, accountId, categoryId, pattern: pattern.trim() || null, active }
-    if (attempt(() => mutate((d) => draft.id ? b.updateRecurring(d, draft.id, v) : b.createRecurring(d, v)), draft.id ? 'Modifié' : 'Ajouté')) onClose()
+    if (endDate && endDate < firstDate) return attempt(() => { throw new Error('La fin précède le début') })
+    const common = { name: name.trim(), kind, freq, interval: Math.max(1, interval), endDate: endDate || null, accountId, categoryId, pattern: pattern.trim() || null, active }
+    const ok = attempt(() => mutate((d) => {
+      if (!draft.id) return b.createRecurring(d, { ...common, amount: signed(cents), startDate: firstDate, dayOfMonth: monthly ? day : null })
+      if (timingChanged) {
+        // montant ou jour modifié : le passé garde l'ancien montant, la suite prend le nouveau (budget, calendrier, prévisions suivent)
+        b.updateRecurring(d, draft.id, common)
+        return b.updateRecurringFrom(d, draft.id, applyFrom, { amount: signed(cents), day })
+      }
+      return b.updateRecurring(d, draft.id, { ...common, amount: signed(cents), startDate: firstDate, dayOfMonth: monthly ? day : null })
+    }, { label: `${draft.id ? 'Modification' : 'Ajout'} : ${name.trim()}` }), draft.id ? 'Modifié partout (budget, calendrier, prévisions)' : 'Ajouté')
+    if (ok) onClose()
   }
 
   return (
@@ -74,9 +94,19 @@ export function RecurringDialog({ draft, onClose }: { draft: RecurringDraft; onC
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5"><Label htmlFor="rs">Une échéance (fixe le jour)</Label><Input id="rs" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></div>
+            {monthly ? <>
+              <div className="grid gap-1.5"><Label htmlFor="rday">{kind === 'revenu' ? 'Arrive' : 'Prélevé'}{interval > 1 ? ` (tous les ${interval} mois)` : ' chaque mois'}</Label><DaySelect id="rday" value={day} onChange={(d) => d && setDay(d)} /></div>
+              <div className="grid gap-1.5"><Label htmlFor="rsm">À partir de</Label><Input id="rsm" type="month" value={startMonth} onChange={(e) => e.target.value && setStartMonth(e.target.value)} disabled={!!draft.id && timingChanged} /></div>
+            </> : <div className="grid gap-1.5"><Label htmlFor="rs">Première date</Label><Input id="rs" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></div>}
             <div className="grid gap-1.5"><Label htmlFor="re">Fin (optionnel)</Label><Input id="re" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
           </div>
+          {timingChanged && (
+            <div className="grid gap-1.5 rounded-md border border-primary/40 bg-primary/5 p-2 text-sm">
+              <Label htmlFor="rfrom">Appliquer ce changement à partir de</Label>
+              <Input id="rfrom" type="month" className="w-44" value={applyFrom} onChange={(e) => e.target.value && setApplyFrom(e.target.value)} />
+              <span className="text-xs text-muted-foreground">Les mois d’avant gardent l’ancien montant. Budget, calendrier, reste à vivre et prévisions se mettent à jour automatiquement.</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5"><Label htmlFor="racc">Compte</Label><AccountSelect id="racc" value={accountId} onChange={setAccountId} allLabel="Tous les comptes" /></div>
             <div className="grid gap-1.5"><Label htmlFor="rc">Catégorie</Label><CategorySelect id="rc" value={categoryId} onChange={setCategoryId} /></div>

@@ -8,7 +8,7 @@ import { addMonths, daysBetween, daysInMonth, endOfMonth, monthOf, today } from 
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
-import { Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { dayLabel, Empty, Money, PageHeader, useCategories } from '@/app/ui'
 import { cn } from '@/lib/utils'
 import { freqLabel, KIND_LABEL, RecurringDialog, type RecurringDraft } from './RecurringDialog'
 
@@ -49,7 +49,7 @@ function List({ st, edit }: { st: b.RecurringStatus[]; edit: (d: RecurringDraft)
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => edit(r)}>
                 <span className="font-medium">{r.name}</span>{' '}
                 <Badge variant="outline">{KIND_LABEL[r.kind]}</Badge>
-                <span className="block text-xs text-muted-foreground">{freqLabel(r.freq, r.interval)}{label(r.categoryId) ? ` · ${label(r.categoryId)}` : ''}{r.freq !== 'month' || r.interval !== 1 ? ` · ${formatMoney(monthly)}/mois` : ''}</span>
+                <span className="block text-xs text-muted-foreground">{freqLabel(r.freq, r.interval)}{r.freq === 'month' ? `, ${dayLabel(r.dayOfMonth ?? Number(r.startDate.slice(8, 10)))}` : ''}{label(r.categoryId) ? ` · ${label(r.categoryId)}` : ''}{r.freq !== 'month' || r.interval !== 1 ? ` · ${formatMoney(monthly)}/mois` : ''}</span>
               </button>
               <div className="flex flex-wrap items-center gap-1.5 text-xs">
                 {increase && <Badge variant="outline" className="border-[var(--viz-critical)]">▲ Hausse : {formatMoney(increase.from)} → {formatMoney(increase.to)}</Badge>}

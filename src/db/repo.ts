@@ -21,11 +21,23 @@ const now = sql`(datetime('now'))`
 // ---------- comptes ----------
 export const listAccounts = (db: Db) => db.select().from(account).orderBy(account.archived, account.name).all()
 
+/**
+ * Solde « d'ouverture » effectif : si le solde a été saisi à une date (« 1 250 € aujourd'hui »), les opérations
+ * jusqu'à cette date y sont déjà comprises ; on les retranche pour que solde = ouverture + toutes les opérations.
+ */
+export function effectiveOpenings(db: Db): Map<string, number> {
+  const rows = db.select({ id: account.id, open: account.openingBalance,
+    before: sql<number>`coalesce(sum(case when ${account.balanceDate} is not null and ${transaction.date} <= ${account.balanceDate} then ${transaction.amount} else 0 end), 0)` })
+    .from(account).leftJoin(transaction, eq(transaction.accountId, account.id)).groupBy(account.id).all()
+  return new Map(rows.map((r) => [r.id, r.open - r.before]))
+}
+
 /** Solde par compte, dans la devise du compte. */
 export function balances(db: Db): Map<string, number> {
-  const rows = db.select({ id: account.id, open: account.openingBalance, sum: sql<number>`coalesce(sum(${transaction.amount}), 0)` })
+  const open = effectiveOpenings(db)
+  const rows = db.select({ id: account.id, sum: sql<number>`coalesce(sum(${transaction.amount}), 0)` })
     .from(account).leftJoin(transaction, eq(transaction.accountId, account.id)).groupBy(account.id).all()
-  return new Map(rows.map((r) => [r.id, r.open + r.sum]))
+  return new Map(rows.map((r) => [r.id, open.get(r.id)! + r.sum]))
 }
 
 export const createAccount = (db: Db, v: typeof account.$inferInsert) => db.insert(account).values(v).returning().get()
