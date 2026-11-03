@@ -22,12 +22,12 @@ const now = sql`(datetime('now'))`
 export const listAccounts = (db: Db) => db.select().from(account).orderBy(account.archived, account.name).all()
 
 /**
- * Solde « d'ouverture » effectif : si le solde a été saisi à une date (« 1 250 € aujourd'hui »), les opérations
- * jusqu'à cette date y sont déjà comprises ; on les retranche pour que solde = ouverture + toutes les opérations.
+ * Solde « d'ouverture » effectif : si le solde a été saisi à une date (« 1 250 € aujourd'hui »), les opérations d'avant
+ * (et celles du jour venues d'un relevé importé) y sont déjà comprises ; on les retranche. Ce qu'on saisit ou coche ensuite compte.
  */
 export function effectiveOpenings(db: Db): Map<string, number> {
   const rows = db.select({ id: account.id, open: account.openingBalance,
-    before: sql<number>`coalesce(sum(case when ${account.balanceDate} is not null and ${transaction.date} <= ${account.balanceDate} then ${transaction.amount} else 0 end), 0)` })
+    before: sql<number>`coalesce(sum(case when ${account.balanceDate} is not null and (${transaction.date} < ${account.balanceDate} or (${transaction.date} = ${account.balanceDate} and ${transaction.importKey} is not null)) then ${transaction.amount} else 0 end), 0)` })
     .from(account).leftJoin(transaction, eq(transaction.accountId, account.id)).groupBy(account.id).all()
   return new Map(rows.map((r) => [r.id, r.open - r.before]))
 }

@@ -61,11 +61,14 @@ export const transaction = sqliteTable('transaction', {
   pro: integer('pro', { mode: 'boolean' }).notNull().default(false), // mode freelance
   vatRate: real('vat_rate'),
   expenseReport: integer('expense_report', { mode: 'boolean' }).notNull().default(false), // note de frais à se faire rembourser
+  // « pointé » depuis le budget : rec:<échéance>:<date> ou line:<catégorie>:<période> (décocher supprime l'opération)
+  plannedRef: text('planned_ref'),
   ...stamps,
 }, (t) => [
   uniqueIndex('tx_dedup').on(t.accountId, t.importKey),
   index('tx_date').on(t.date),
   index('tx_account').on(t.accountId),
+  uniqueIndex('tx_planned_ref').on(t.plannedRef),
 ])
 
 export const transactionSplit = sqliteTable('transaction_split', {

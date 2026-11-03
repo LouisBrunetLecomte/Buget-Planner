@@ -66,21 +66,80 @@ function matchingTxs(db: Db, r: Recurring): MatchTx[] {
 
 export interface Occurrence { recurring: Recurring; date: string; paid: MatchTx | null }
 
+/** Opérations pointées depuis le budget, par référence (rec:<échéance>:<date> ou line:<catégorie>:<période>). */
+export function pointed(db: Db): Map<string, MatchTx & { ref: string }> {
+  return new Map(db.select({ id: transaction.id, date: transaction.date, amountEur: transaction.amountEur, ref: transaction.plannedRef })
+    .from(transaction).where(sql`${transaction.plannedRef} is not null`).all().map((t) => [t.ref!, { ...t, ref: t.ref! }]))
+}
+export const occurrenceRef = (recurringId: string, date: string) => `rec:${recurringId}:${date}`
+export const lineRef = (categoryId: string, period: string) => `line:${categoryId}:${period}`
+
+/** Échéance réglée : cochée à la main, ou retrouvée dans les opérations importées (motif du libellé, ±6 jours). */
+function paidFor(db: Db, r: Recurring, dates: string[], refs = pointed(db)): Map<string, MatchTx> {
+  const out = new Map<string, MatchTx>()
+  const used = new Set([...refs.values()].map((t) => t.id))
+  const auto = matchOccurrences(dates.filter((d) => !refs.has(occurrenceRef(r.id, d))), matchingTxs(db, r).filter((t) => !used.has(t.id)), r)
+  for (const d of dates) { const t = refs.get(occurrenceRef(r.id, d)) ?? auto.get(d); if (t) out.set(d, t) }
+  return out
+}
+
+export interface Occurrence { recurring: Recurring; date: string; paid: MatchTx | null; ticked: boolean }
+
 /** Échéances de toutes les récurrences actives entre deux dates, avec l'opération qui les a réglées. */
 export function occurrencesBetween(db: Db, from: string, to: string): Occurrence[] {
-  const out: Occurrence[] = []
+  const out: Occurrence[] = [], refs = pointed(db)
   for (const r of listRecurring(db).filter((x) => x.active)) {
     const dates = occurrences(r, from, to)
-    const paid = matchOccurrences(dates, matchingTxs(db, r), r)
-    for (const d of dates) out.push({ recurring: r, date: d, paid: paid.get(d) ?? null })
+    const paid = paidFor(db, r, dates, refs)
+    for (const d of dates) out.push({ recurring: r, date: d, paid: paid.get(d) ?? null, ticked: refs.has(occurrenceRef(r.id, d)) })
   }
   return out.sort((a, b) => a.date.localeCompare(b.date))
 }
 
-/** Prochaine échéance à partir d'aujourd'hui, en sautant celle déjà réglée (prélèvement en avance ou du jour). */
-function nextUnpaid(r: Recurring, txs: MatchTx[], today: string): string | null {
+// ---------- pointage : « c'est payé / reçu » ----------
+function defaultAccount(db: Db, preferred: string | null) {
+  const accs = db.select().from(account).where(eq(account.archived, false)).all()
+  const a = accs.find((x) => x.id === preferred) ?? accs.find((x) => x.type === 'courant' && x.currency === 'EUR') ?? accs.find((x) => x.currency === 'EUR')
+  if (!a) throw new Error('Crée d’abord un compte en euros (onglet Comptes) : c’est là que le montant sera enregistré.')
+  return a
+}
+
+/**
+ * Coche une échéance : enregistre l'opération réelle (montant prévu, ou celui saisi) sur le compte de l'échéance.
+ * Date : celle de l'échéance, ou aujourd'hui si on coche en avance. Elle compte quand même pour la période de l'échéance.
+ */
+export function tickOccurrence(db: Db, recurringId: string, date: string, today: string, amount?: number) {
+  const r = db.select().from(recurring).where(eq(recurring.id, recurringId)).get()
+  if (!r) throw new Error('Échéance introuvable')
+  const ref = occurrenceRef(r.id, date)
+  if (pointed(db).has(ref)) return
+  const acc = defaultAccount(db, r.accountId)
+  db.insert(transaction).values({ accountId: acc.id, date: date > today ? today : date, amount: amount ?? r.amount, currency: 'EUR', amountEur: amount ?? r.amount,
+    label: r.name, labelNorm: normalizeLabel(r.name), categoryId: r.categoryId, plannedRef: ref }).run()
+}
+
+/** Coche une ligne de budget sans date (courses, sorties…) : le montant indiqué est enregistré comme payé pour la période. */
+export function tickLine(db: Db, categoryId: string, period: string, amount: number, today: string) {
+  const ref = lineRef(categoryId, period)
+  if (pointed(db).has(ref)) return
+  if (!Number.isInteger(amount) || amount === 0) throw new Error('Montant invalide')
+  const cat = listCategories(db).find((c) => c.id === categoryId)
+  if (!cat) throw new Error('Catégorie introuvable')
+  const acc = defaultAccount(db, null)
+  const { start, end } = { start: periodStart(period, periodDay(db)), end: periodEnd(period, periodDay(db)) }
+  const date = today < start ? start : today > end ? end : today
+  const signed = cat.kind === 'revenu' ? Math.abs(amount) : -Math.abs(amount)
+  db.insert(transaction).values({ accountId: acc.id, date, amount: signed, currency: 'EUR', amountEur: signed,
+    label: cat.name, labelNorm: normalizeLabel(cat.name), categoryId, plannedRef: ref }).run()
+}
+
+/** Décoche : l'opération créée par le pointage est supprimée, tout revient comme avant. */
+export const untick = (db: Db, ref: string) => db.delete(transaction).where(eq(transaction.plannedRef, ref)).run()
+
+/** Prochaine échéance à partir d'aujourd'hui, en sautant celle déjà réglée (cochée, ou prélevée en avance). */
+function nextUnpaid(db: Db, r: Recurring, today: string): string | null {
   const dates = occurrences(r, today, addDays(today, 800)).slice(0, 2)
-  const paid = matchOccurrences(dates, txs.filter((t) => t.date >= addDays(today, -6)), r)
+  const paid = paidFor(db, r, dates)
   return dates.find((d) => !paid.has(d)) ?? null
 }
 
@@ -92,9 +151,9 @@ export function recurringStatus(db: Db, today: string): RecurringStatus[] {
   return listRecurring(db).map((r) => {
     const txs = matchingTxs(db, r).sort((a, b) => a.date.localeCompare(b.date))
     const past = occurrences(r, addDays(today, -30), addDays(today, -3))
-    const paid = matchOccurrences(past, txs, r)
+    const paid = paidFor(db, r, past)
     return {
-      r, next: nextUnpaid(r, txs, today), monthly: monthlyEquivalent(r, r.amount),
+      r, next: nextUnpaid(db, r, today), monthly: monthlyEquivalent(r, r.amount),
       lastPaid: txs.at(-1) ?? null, increase: priceIncrease(txs), missed: r.pattern && r.active ? past.filter((d) => !paid.has(d)) : [],
     }
   })
@@ -148,6 +207,10 @@ export function actualsBetween(db: Db, from: string, to: string): Actuals {
   for (const r of listRecurring(db).filter((x) => x.active && x.pattern)) {
     const dates = occurrences(r, lo, hi)
     for (const [date, t] of matchOccurrences(dates, matchingTxs(db, r).filter((t) => t.date >= lo && t.date <= hi), r)) override.set(t.id, periodOf(date, day))
+  }
+  for (const [ref, t] of pointed(db)) {
+    const [kind, , rest] = [ref.split(':')[0], ref.split(':')[1], ref.split(':').slice(2).join(':')]
+    override.set(t.id, kind === 'rec' ? periodOf(rest, day) : rest)
   }
   const keyOf = (id: string, date: string) => override.get(id) ?? periodOf(date, day)
   const out: Actuals = new Map()
@@ -203,6 +266,8 @@ export function setBudget(db: Db, categoryId: string, month: string, amount: num
   })
 }
 export const removeException = (db: Db, id: string) => db.delete(budgetException).where(eq(budgetException.id, id)).run()
+/** Supprime les montants saisis d'une catégorie (pas ses exceptions). */
+export const removeLines = (db: Db, categoryId: string) => db.delete(budgetLine).where(eq(budgetLine.categoryId, categoryId)).run()
 export function removeBudget(db: Db, categoryId: string) {
   db.delete(budgetLine).where(eq(budgetLine.categoryId, categoryId)).run()
   db.delete(budgetException).where(eq(budgetException.categoryId, categoryId)).run()

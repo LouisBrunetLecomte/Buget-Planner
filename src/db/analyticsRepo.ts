@@ -133,10 +133,10 @@ export const alertSettings = (db: Db): AlertSettings => {
 export const saveAlertSettings = (db: Db, s: AlertSettings) => putSetting(db, 'alertSettings', s)
 
 export function alerts(db: Db, today: string): Alert[] {
-  const s = alertSettings(db), cur = currentPeriod(db, today), end = periodBounds(db, cur).end
+  const s = alertSettings(db), cur = currentPeriod(db, today), { start, end } = periodBounds(db, cur)
   const cats = listCategories(db), catLabel = (id: string) => cats.find((c) => c.id === id)?.name ?? '?'
   const month = getBudget(db, cur, cur)[0] ?? null
-  const upcomingAll = occurrencesBetween(db, today, end).filter((o) => !o.paid)
+  const upcomingAll = occurrencesBetween(db, start, end).filter((o) => !o.paid)
   const soon = occurrencesBetween(db, today, addDays(today, s.daysBefore)).filter((o) => !o.paid)
   const missedIncome = recurringStatus(db, today).filter((x) => x.r.kind === 'revenu').flatMap((x) => x.missed.map((d) => ({ name: x.r.name, date: d, amount: x.r.amount })))
   const dismissed = new Set(getSetting<string[]>(db, 'dismissedAlerts') ?? [])

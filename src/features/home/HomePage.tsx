@@ -9,7 +9,8 @@ import * as b from '@/db/budgetRepo'
 import * as an from '@/db/analyticsRepo'
 import { mutate, useDb } from '@/app/store'
 import { getSetting, putSetting } from '@/db/repo'
-import { Empty, Money, PageHeader, useAccounts, useCategories } from '@/app/ui'
+import { attempt, Empty, Money, PageHeader, useAccounts, useCategories } from '@/app/ui'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ResteAVivre } from '@/features/budget/BudgetPage'
 import { cn } from '@/lib/utils'
 
@@ -49,18 +50,21 @@ function Alerts() {
 function Upcoming() {
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const occ = useMemo(() => b.occurrencesBetween(db, today(), addDays(today(), 14)).filter((o) => !o.paid), [db, version])
+  const occ = useMemo(() => b.occurrencesBetween(db, b.periodBounds(db, b.currentPeriod(db, today())).start, addDays(today(), 14)).filter((o) => !o.paid), [db, version])
   return (
     <Card>
-      <CardHeader><CardTitle>Prochaines échéances</CardTitle><CardDescription>14 jours</CardDescription></CardHeader>
+      <CardHeader><CardTitle>À payer / à recevoir</CardTitle><CardDescription>Coche quand c’est fait</CardDescription></CardHeader>
       <CardContent>
         {!occ.length ? <p className="text-sm text-muted-foreground">Aucune échéance suivie. <a className="underline" href="#/recurrences">Détecter mes charges fixes</a></p> : (
           <ul className="grid gap-1 text-sm">
             {occ.map((o) => {
               const n = daysBetween(today(), o.date)
               return (
-                <li key={o.recurring.id + o.date} className="flex justify-between gap-2">
-                  <span className="truncate">{o.recurring.name} <span className="text-xs text-muted-foreground">{n === 0 ? 'aujourd’hui' : n === 1 ? 'demain' : `dans ${n} j`}</span></span>
+                <li key={o.recurring.id + o.date} className="flex items-center justify-between gap-2">
+                  <label className="flex min-w-0 items-center gap-2">
+                    <Checkbox aria-label={`${o.recurring.name} ${o.recurring.amount > 0 ? 'reçu' : 'payé'}`} onCheckedChange={(v) => v === true && attempt(() => mutate((d) => b.tickOccurrence(d, o.recurring.id, o.date, today()), { label: `${o.recurring.name} ${o.recurring.amount > 0 ? 'reçu' : 'payé'}` }), `${o.recurring.name} : ${o.recurring.amount > 0 ? 'reçu' : 'payé'}`)} />
+                    <span className="truncate">{o.recurring.name} <span className="text-xs text-muted-foreground">{n < 0 ? `en retard (${-n} j)` : n === 0 ? 'aujourd’hui' : n === 1 ? 'demain' : `dans ${n} j`}</span></span>
+                  </label>
                   <Money cents={o.recurring.amount} />
                 </li>
               )

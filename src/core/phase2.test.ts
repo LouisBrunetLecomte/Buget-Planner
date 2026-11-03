@@ -124,12 +124,12 @@ describe('échéances datées comme source du budget', () => {
     ['2026-11', new Map([['loyer', [{ id: 'r1', name: 'Loyer', date: '2026-11-05', amount: -92000 }]], ['salaire', [{ id: 's', name: 'Salaire', date: '2026-11-28', amount: 265000 }]],
       ['net', [{ id: 'b', name: 'Box', date: '2026-11-10', amount: -2999 }, { id: 'm', name: 'Mobile', date: '2026-11-12', amount: -1999 }]]])],
   ])
-  it('le prévu suit les échéances ; une ligne saisie l’emporte ; une exception aussi', () => {
+  it('le prévu suit les échéances, même si un ancien montant a été saisi ; une exception s’applique par-dessus', () => {
     const [m] = computeBudget(cats, [{ categoryId: 'net', amount: 6000, validFrom: '2026-01', validTo: null }], [], new Map(), '2026-11', '2026-11', plan)
     const r = (id: string) => m!.rows.find((x) => x.categoryId === id)!
     expect(r('loyer')).toMatchObject({ source: 'echeances', planned: 92000 })
     expect(r('salaire')).toMatchObject({ source: 'echeances', planned: 265000, kind: 'revenu' })
-    expect(r('net')).toMatchObject({ source: 'ligne', planned: 6000 })
+    expect(r('net')).toMatchObject({ source: 'echeances', planned: 4998, overridden: 6000 })
     expect(r('net').items).toHaveLength(2)
     const [e] = computeBudget(cats, [], [{ id: 'x', categoryId: 'loyer', month: '2026-11', amount: 0, reason: 'Logé chez des amis' }], new Map(), '2026-11', '2026-11', plan)
     expect(e!.rows.find((x) => x.categoryId === 'loyer')!.planned).toBe(0)

@@ -13,7 +13,8 @@ export type RecurringPlan = Map<string, Map<string, PlannedItem[]>>
 export interface Row {
   categoryId: string; kind: 'depense' | 'revenu'
   source: 'ligne' | 'echeances' // montant saisi dans le budget, ou calculé depuis les échéances datées
-  items: PlannedItem[]          // échéances du mois pour cette catégorie (même si une ligne saisie l'emporte)
+  items: PlannedItem[]          // échéances datées de la période pour cette catégorie
+  overridden: number | null     // ancien montant saisi, ignoré parce que des échéances datées existent
   base: number | null          // montant du modèle pour ce mois
   exception: Exception | null  // surcharge ponctuelle
   planned: number              // exception ?? base
@@ -51,14 +52,14 @@ export function computeBudget(cats: Cat[], lines: Line[], exceptions: Exception[
       if (c.kind === 'transfert') continue
       const line = lineFor(lines, c.id, month)
       const items = plan.get(month)?.get(c.id) ?? []
-      // une ligne saisie l'emporte ; sinon le prévu = somme des échéances datées du mois (loyer, salaire…)
+      // les échéances datées (loyer, salaire…) sont la source : elles l'emportent sur un montant saisi à la main
       const fromItems = items.length ? Math.max(0, items.reduce((s, i) => s + (c.kind === 'depense' ? -i.amount : i.amount), 0)) : null
-      const base = line?.amount ?? fromItems
+      const base = fromItems ?? line?.amount ?? null
       const exception = exceptions.find((e) => e.categoryId === c.id && e.month === month) ?? null
       if (base === null && !exception) continue
       const cy = c.rollover && c.kind === 'depense' ? (carry.get(c.id) ?? 0) : 0
       const planned = exception?.amount ?? base!
-      rows.set(c.id, { categoryId: c.id, kind: c.kind, source: line || !items.length ? 'ligne' : 'echeances', items, base, exception, planned, carry: cy, actual: 0, remaining: 0 })
+      rows.set(c.id, { categoryId: c.id, kind: c.kind, source: items.length ? 'echeances' : 'ligne', items, overridden: items.length && line ? line.amount : null, base, exception, planned, carry: cy, actual: 0, remaining: 0 })
     }
     let unbudgetedExpense = 0, unbudgetedIncome = 0
     for (const [catId, sum] of actuals.get(month) ?? []) {

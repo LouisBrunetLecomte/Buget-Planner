@@ -210,3 +210,22 @@ Un petit module remplace next-themes, dont le script en ligne était incompatibl
 - **Salaire versé en avance ou en retard** : une opération reconnue comme une échéance (motif du libellé, ±6 jours) compte pour la période de l'échéance. Un salaire versé le vendredi 10 pour le 12 ne gonfle pas la période précédente.
 - **Écrans concernés** : budget (prévu, réel, exceptions, report), reste à vivre (jusqu'à la prochaine paie), alertes, accueil, analyses, prévisions, simulations, règles d'épargne, rapports PDF et assistant.
 - **Écrans non concernés** : le filtre « Mois » des Opérations et le calendrier des échéances restent en mois calendaires, puisqu'ils montrent des dates réelles.
+
+## D42. Pointage « payé / reçu » au lieu d'un « réel » abstrait
+- **Principe** : chaque échéance datée et chaque ligne de budget a une case à cocher (Budget, Accueil, Récurrences). Cocher enregistre l'opération réelle (montant prévu, compte de l'échéance ou compte courant par défaut) avec une référence `planned_ref` unique (`rec:<échéance>:<date>` ou `line:<catégorie>:<période>`). Décocher la supprime.
+- **Pourquoi passer par une vraie opération** : le pointage devient une donnée comme une autre. Budget (payé/reçu, reste), solde des comptes, reste à vivre, alertes, analyses et santé financière bougent ensemble, sans logique parallèle.
+- **Date de l'opération** :
+  - échéance cochée en avance : la date du jour, mais elle compte pour la période de l'échéance ;
+  - échéance cochée en retard : sa date prévue ;
+  - ligne de budget : le jour même, ramené dans la période.
+- **Avec un import bancaire** : une échéance retrouvée dans les opérations importées apparaît cochée d'office, case grisée.
+- **Reste à vivre** : il compte tout ce qui est prévu sur la période et pas encore coché, retards compris.
+
+## D43. Les échéances datées l'emportent sur un montant saisi
+Quand une catégorie a des échéances datées, elles fixent le prévu, même si un montant a été saisi à la main auparavant (par exemple par l'ancien tutoriel). L'ancien montant est signalé avec un bouton pour le supprimer. Sans cette règle, modifier le salaire dans les Récurrences ne changeait pas le budget.
+
+## D44. Solde « au [date] » et opérations du jour même
+Pour un compte dont le solde a été saisi à une date :
+- les opérations antérieures y sont déjà comprises ;
+- celles du jour venues d'un relevé importé aussi ;
+- celles saisies ou cochées le jour même, après coup, comptent.

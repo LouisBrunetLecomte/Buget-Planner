@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { addMonths, daysInMonth, monthsBetween, today } from '@/core/dates'
@@ -32,8 +33,9 @@ function Bar({ value, max, income }: { value: number; max: number; income?: bool
 export function ResteAVivre() {
   const { db, version } = useDb()
   const r = useMemo(() => {
-    const t = today(), end = b.periodBounds(db, b.currentPeriod(db, t)).end
-    const upcoming = b.occurrencesBetween(db, t, end).filter((o) => !o.paid).map((o) => o.recurring.amount)
+    const t = today(), { start, end } = b.periodBounds(db, b.currentPeriod(db, t))
+    // tout ce qui est prévu sur la période et pas encore coché (ou retrouvé), y compris en retard
+    const upcoming = b.occurrencesBetween(db, start, end).filter((o) => !o.paid).map((o) => o.recurring.amount)
     return { ...resteAVivre(b.liquidBalance(db), upcoming, t, end), count: upcoming.length, day: b.periodDay(db) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version])
@@ -58,8 +60,8 @@ function Summary({ m }: { m: MonthBudget }) {
   const epargne = income - (real ? m.actualExpense : m.plannedExpense)
   return (
     <>
-      <Card size="sm"><CardHeader><CardDescription>Revenus</CardDescription><CardTitle className="text-xl"><Money cents={m.actualIncome} colored={false} /></CardTitle><CardDescription className="text-xs">prévu {formatMoney(m.plannedIncome)}</CardDescription></CardHeader></Card>
-      <Card size="sm"><CardHeader><CardDescription>Dépenses</CardDescription><CardTitle className="text-xl"><Money cents={m.actualExpense} colored={false} /></CardTitle><CardDescription className="text-xs">prévu {formatMoney(m.plannedExpense)}{m.unbudgetedExpense ? ` · ${formatMoney(m.unbudgetedExpense)} hors budget` : ''}</CardDescription></CardHeader></Card>
+      <Card size="sm"><CardHeader><CardDescription>Revenus reçus</CardDescription><CardTitle className="text-xl"><Money cents={m.actualIncome} colored={false} /></CardTitle><CardDescription className="text-xs">prévu {formatMoney(m.plannedIncome)}</CardDescription></CardHeader></Card>
+      <Card size="sm"><CardHeader><CardDescription>Dépenses payées</CardDescription><CardTitle className="text-xl"><Money cents={m.actualExpense} colored={false} /></CardTitle><CardDescription className="text-xs">prévu {formatMoney(m.plannedExpense)}{m.unbudgetedExpense ? ` · ${formatMoney(m.unbudgetedExpense)} hors budget` : ''}</CardDescription></CardHeader></Card>
       <Card size="sm" className={cn(m.toAssign < 0 && 'border-destructive')}>
         <CardHeader><CardDescription>Reste à affecter (base zéro)</CardDescription><CardTitle className="text-xl"><Money cents={m.toAssign} colored={false} /></CardTitle>
           <CardDescription className="text-xs">{!m.plannedIncome ? 'Aucun revenu prévu.' : m.toAssign === 0 ? 'Chaque euro a un rôle.' : m.toAssign > 0 ? 'Revenus prévus non budgétés : épargne ?' : 'Tu prévois de dépenser plus que tes revenus.'}</CardDescription></CardHeader>
@@ -71,22 +73,53 @@ function Summary({ m }: { m: MonthBudget }) {
   )
 }
 
-function RowLine({ r, onEdit, month }: { r: Row; onEdit: () => void; month: string }) {
+type TickStatus = Map<string, { paid: boolean; ticked: boolean }>
+const fmtDay = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+
+/** Case « payé / reçu » : cocher enregistre l'opération réelle, décocher l'efface. Tout l'app suit. */
+function Tick({ checked, disabled, label, title, onChange }: { checked: boolean; disabled?: boolean; label: string; title?: string; onChange: (v: boolean) => void }) {
+  return (
+    <label className={cn('flex items-center gap-2 py-0.5 text-sm', checked && 'text-muted-foreground')} title={title}>
+      <Checkbox checked={checked} disabled={disabled} onCheckedChange={(v) => onChange(v === true)} aria-label={label} />
+      <span className={cn(checked && 'line-through decoration-1')}>{label}</span>
+    </label>
+  )
+}
+
+function RowLine({ r, onEdit, month, status, lineTicked }: { r: Row; onEdit: () => void; month: string; status: TickStatus; lineTicked: boolean }) {
   const { label } = useCategories()
   const avail = r.planned + r.carry
+  const verb = r.kind === 'revenu' ? 'reçu' : 'payé'
+  const tickItem = (id: string, date: string, v: boolean, name: string) =>
+    attempt(() => mutate((d) => (v ? b.tickOccurrence(d, id, date, today()) : b.untick(d, b.occurrenceRef(id, date))), { label: `${name} ${v ? verb : `non ${verb}`}` }))
+  const tickLine = (v: boolean) =>
+    attempt(() => mutate((d) => (v ? b.tickLine(d, r.categoryId, month, avail, today()) : b.untick(d, b.lineRef(r.categoryId, month))), { label: `${label(r.categoryId)} ${v ? verb : `non ${verb}`}` }))
   return (
     <li className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t px-3 py-2 first:border-t-0 md:grid-cols-[1fr_9rem_9rem_9rem]">
-      <button type="button" className="text-left" onClick={onEdit}>
-        <span className="font-medium">{label(r.categoryId)}</span>
-        {r.exception && <Badge variant="secondary" className="ml-2">Exception{r.exception.reason ? ` : ${r.exception.reason}` : ''}</Badge>}
-        {r.carry !== 0 && <span className="ml-2 text-xs text-muted-foreground">report {formatMoney(r.carry)}</span>}
-        {r.items.length > 0 && (
-          <span className="block text-xs text-muted-foreground">
-            {r.items.map((i) => `${i.name} ${formatMoney(Math.abs(i.amount))} le ${new Date(i.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`).join(' · ')}
-            {r.source === 'ligne' && ' (montant saisi utilisé à la place)'}
-          </span>
+      <div>
+        <button type="button" className="text-left" onClick={onEdit}>
+          <span className="font-medium">{label(r.categoryId)}</span>
+          {r.exception && <Badge variant="secondary" className="ml-2">Exception{r.exception.reason ? ` : ${r.exception.reason}` : ''}</Badge>}
+          {r.carry !== 0 && <span className="ml-2 text-xs text-muted-foreground">report {formatMoney(r.carry)}</span>}
+        </button>
+        {r.items.length > 0 ? (
+          <div className="mt-0.5">
+            {r.items.map((i) => {
+              const st = status.get(`${i.id}|${i.date}`)
+              const byBank = !!st?.paid && !st.ticked
+              return <Tick key={i.id + i.date} checked={!!st?.paid} disabled={byBank} title={byBank ? 'Retrouvé dans tes opérations importées' : `Coche quand c’est ${verb}`}
+                label={`${i.name} ${formatMoney(Math.abs(i.amount))} le ${fmtDay(i.date)}`} onChange={(v) => tickItem(i.id, i.date, v, i.name)} />
+            })}
+          </div>
+        ) : avail > 0 && (
+          <Tick checked={lineTicked} label={`${verb[0]!.toUpperCase()}${verb.slice(1)} (${formatMoney(avail)})`} title={`Coche quand c’est ${verb} : le montant prévu est enregistré`} onChange={tickLine} />
         )}
-      </button>
+        {r.overridden !== null && (
+          <button type="button" className="block text-left text-xs text-muted-foreground underline" onClick={() => { if (confirm(`Supprimer l’ancien montant saisi (${formatMoney(r.overridden!)}) ? Tes échéances datées le remplacent déjà.`)) mutate((d) => b.removeLines(d, r.categoryId), { label: 'Ancien montant supprimé' }) }}>
+            Ancien montant saisi ({formatMoney(r.overridden)}) remplacé par tes échéances : le supprimer
+          </button>
+        )}
+      </div>
       <span className="text-right text-sm tabular-nums md:order-none">
         <span className="md:hidden"><Money cents={r.actual} colored={false} /> / </span>
         <button type="button" className="hover:underline" onClick={onEdit} aria-label={`Modifier le prévu de ${label(r.categoryId)}`}>{formatMoney(avail)}</button>
@@ -145,6 +178,13 @@ function MonthView({ month }: { month: string }) {
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const m = useMemo(() => b.getBudget(db, month, month)[0]!, [db, version, month])
+  // état des cases : échéances payées/reçues (cochées ou retrouvées dans les opérations) et lignes cochées
+  const ticks = useMemo(() => {
+    const { start, end } = b.periodBounds(db, month)
+    const status: TickStatus = new Map(b.occurrencesBetween(db, start, end).map((o) => [`${o.recurring.id}|${o.date}`, { paid: !!o.paid, ticked: o.ticked }]))
+    return { status, lines: new Set([...b.pointed(db).keys()].filter((k) => k.startsWith('line:'))) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version, month])
   const [edit, setEdit] = useState<{ categoryId: string; row: Row | null } | null>(null)
   const isCurrent = month === b.currentPeriod(db, today())
   const size = (r: Row) => Math.max(r.planned + r.carry, r.actual)
@@ -172,9 +212,9 @@ function MonthView({ month }: { month: string }) {
         <section key={g.k} className="mb-4">
           <h2 className="mb-1 flex justify-between px-1 text-sm font-medium text-muted-foreground">
             <span>{g.k === 'revenu' ? 'Revenus' : 'Dépenses'}</span>
-            <span className="hidden w-[27rem] grid-cols-3 text-right md:grid"><span>Prévu</span><span>Réel</span><span>Reste</span></span>
+            <span className="hidden w-[27rem] grid-cols-3 text-right md:grid"><span>Prévu</span><span>Payé / reçu</span><span>Reste</span></span>
           </h2>
-          <ul className="rounded-lg border bg-card">{g.rows.map((r) => <RowLine key={r.categoryId} r={r} month={month} onEdit={() => setEdit({ categoryId: r.categoryId, row: r })} />)}</ul>
+          <ul className="rounded-lg border bg-card">{g.rows.map((r) => <RowLine key={r.categoryId} r={r} month={month} status={ticks.status} lineTicked={ticks.lines.has(b.lineRef(r.categoryId, month))} onEdit={() => setEdit({ categoryId: r.categoryId, row: r })} />)}</ul>
         </section>
       ))}
       {m.unbudgetedExpense > 0 && <p className="mb-4 text-sm text-muted-foreground">Dépenses hors budget ce mois : <Money cents={m.unbudgetedExpense} colored={false} /> (catégories sans ligne de budget, ou non catégorisées).</p>}

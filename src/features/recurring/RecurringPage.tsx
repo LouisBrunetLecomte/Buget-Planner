@@ -8,7 +8,8 @@ import { addMonths, daysBetween, daysInMonth, endOfMonth, monthOf, today } from 
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
-import { dayLabel, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { attempt, dayLabel, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { freqLabel, KIND_LABEL, RecurringDialog, type RecurringDraft } from './RecurringDialog'
 
@@ -56,7 +57,13 @@ function List({ st, edit }: { st: b.RecurringStatus[]; edit: (d: RecurringDraft)
                 {increase && Math.abs(increase.to) !== Math.abs(r.amount) && <Button size="xs" variant="outline" onClick={() => mutate((d) => b.updateRecurring(d, r.id, { amount: increase.to }))}>Mettre à jour</Button>}
                 {missed.map((m) => <Badge key={m} variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-400">Non retrouvé le {fmtDay(m)}</Badge>)}
                 {renewal && <Badge variant="secondary">Renouvellement {inDays(next)}</Badge>}
-                {next && <span className={cn('text-muted-foreground', soon && 'font-medium text-foreground')}>{fmtDay(next)} ({inDays(next)})</span>}
+                {next && r.active && (
+                  <label className="flex items-center gap-1.5" title={`Coche quand c’est ${r.amount > 0 ? 'reçu' : 'payé'}`}>
+                    <Checkbox aria-label={`${r.name} du ${fmtDay(next)} ${r.amount > 0 ? 'reçu' : 'payé'}`} checked={false}
+                      onCheckedChange={(v) => v === true && attempt(() => mutate((d) => b.tickOccurrence(d, r.id, next, today()), { label: `${r.name} ${r.amount > 0 ? 'reçu' : 'payé'}` }), `${r.name} du ${fmtDay(next)} : ${r.amount > 0 ? 'reçu' : 'payé'}`)} />
+                    <span className={cn('text-muted-foreground', soon && 'font-medium text-foreground')}>{fmtDay(next)} ({inDays(next)})</span>
+                  </label>
+                )}
               </div>
               <Money cents={r.amount} className="w-24 text-right font-medium" />
             </div>

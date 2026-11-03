@@ -59,6 +59,8 @@ it('solde saisi « aujourd’hui » : les opérations importées d’avant ne s�
   expect(repo.balances(db).get(acc.id)).toBe(125000)
   repo.addTransaction(db, { accountId: acc.id, date: '2026-11-04', amount: -2000, label: 'C' })
   expect(repo.balances(db).get(acc.id)).toBe(123000)
+  repo.addTransaction(db, { accountId: acc.id, date: '2026-11-03', amount: -500, label: 'Saisi le jour même, après le solde' })
+  expect(repo.balances(db).get(acc.id)).toBe(122500)
 })
 
 it('crédit : sa mensualité devient une charge fixe datée, supprimée avec lui', () => {
