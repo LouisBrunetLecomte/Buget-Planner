@@ -116,8 +116,8 @@ function Scenarios() {
             </CardContent></Card>
         )}
         <Card>
-          <CardHeader><CardTitle>Solde des comptes courants, fin de mois</CardTitle>
-            <CardDescription>Base : budget prévu (ou moyenne des 3 derniers mois). Horizon
+          <CardHeader><CardTitle>Solde des comptes courants, fin de période</CardTitle>
+            <CardDescription>Base : ce qui reste à payer et recevoir, puis ton budget prévu (à défaut, ta moyenne passée). Horizon
               {[12, 24].map((h) => <Button key={h} size="xs" className="ml-1" variant={horizon === h ? 'default' : 'outline'} aria-pressed={horizon === h} onClick={() => setHorizon(h)}>{h} mois</Button>)}</CardDescription></CardHeader>
           <CardContent>
             <div className="mb-2 flex flex-wrap gap-4">{series.map((s, k) => <LegendItem key={s.name} color={SERIES[k]!} label={s.name} line />)}</div>

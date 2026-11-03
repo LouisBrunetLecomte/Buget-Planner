@@ -27,7 +27,7 @@ function BalanceForecast({ horizon }: { horizon: number }) {
   const neg = d.proj.find((p) => p.balance < 0)
   return (
     <Card>
-      <CardHeader><CardTitle>Solde total et prévision</CardTitle><CardDescription>Fin de mois, tous comptes. Prévision : budget du mois en cours puis budget prévu.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Solde total et prévision</CardTitle><CardDescription>Fin de période (de paie à paie), tous comptes, depuis ton premier jour dans Buget. Prévision : ce qui reste à payer et recevoir, puis le budget prévu.</CardDescription></CardHeader>
       <CardContent>
         {neg && <p role="alert" className="mb-2 text-sm text-destructive">⚠ Découvert probable fin {monthShort(neg.month)} ({formatMoney(neg.balance)}).</p>}
         <div className="mb-2 flex gap-4"><LegendItem color="var(--viz-1)" label="Réel" line /><LegendItem color="var(--viz-1)" label="Prévision" line dashed /></div>
@@ -39,7 +39,7 @@ function BalanceForecast({ horizon }: { horizon: number }) {
               <YAxis tickFormatter={axisEuro} width={48} {...axisProps} />
               {neg && <ReferenceLine y={0} stroke="var(--viz-critical)" />}
               <Tooltip content={<ChartTooltip labelFormat={monthShort} />} />
-              <Line dataKey="reel" name="Réel" stroke="var(--viz-1)" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }} connectNulls={false} />
+              <Line dataKey="reel" name="Réel" stroke="var(--viz-1)" strokeWidth={2} dot={merged.filter((x) => x.reel !== undefined).length === 1 ? { r: 4, fill: 'var(--viz-1)', strokeWidth: 2, stroke: 'var(--card)' } : false} activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }} connectNulls={false} />
               <Line dataKey="prevision" name="Prévision" stroke="var(--viz-1)" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }} />
             </LineChart>
           </ResponsiveContainer>
@@ -55,10 +55,12 @@ function IncomeVsExpense() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => an.monthlyTotals(db, today()), [db, version])
   const data = rows.map((r) => ({ month: r.month, income: e(r.income), expense: e(r.expense) }))
+  const empty = rows.every((r) => !r.income && !r.expense)
   return (
     <Card>
-      <CardHeader><CardTitle>Revenus et dépenses</CardTitle><CardDescription>12 derniers mois, hors virements internes.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Revenus et dépenses</CardTitle><CardDescription>Par période, hors virements internes.</CardDescription></CardHeader>
       <CardContent>
+        {empty ? <Empty>Rien encore de payé ou reçu. Ce graphique se remplit quand tu coches tes paiements (Budget, Accueil) ou importes un relevé.</Empty> : <>
         <div className="mb-2 flex gap-4"><LegendItem color="var(--viz-1)" label="Revenus" /><LegendItem color="var(--viz-2)" label="Dépenses" /></div>
         <div className="h-64">
           <ResponsiveContainer>
@@ -72,7 +74,8 @@ function IncomeVsExpense() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <TableView head={['Mois', 'Revenus', 'Dépenses', 'Épargne']} rows={rows.map((r) => [monthShort(r.month), formatMoney(r.income), formatMoney(r.expense), formatMoney(r.income - r.expense)])} />
+        <TableView head={['Période', 'Revenus', 'Dépenses', 'Épargne']} rows={rows.map((r) => [monthShort(r.month), formatMoney(r.income), formatMoney(r.expense), formatMoney(r.income - r.expense)])} />
+        </>}
       </CardContent>
     </Card>
   )
@@ -155,6 +158,12 @@ function YearOverYear({ year }: { year: number }) {
   const { db: db0 } = useDb()
   const cur = currentPeriod(db0, today())
   const data = rows.map((r) => ({ m: new Date(`${r.month}-15`).toLocaleDateString('fr-FR', { month: 'short' }), current: r.month <= cur ? e(r.current) : undefined, previous: e(r.previous) }))
+  if (!rows.some((r) => r.previous)) return (
+    <Card>
+      <CardHeader><CardTitle>Dépenses {year} vs {year - 1}</CardTitle></CardHeader>
+      <CardContent><Empty>La comparaison avec l’année précédente apparaîtra quand tu auras des dépenses sur {year - 1}.</Empty></CardContent>
+    </Card>
+  )
   return (
     <Card>
       <CardHeader><CardTitle>Dépenses {year} vs {year - 1}</CardTitle><CardDescription>Par mois.</CardDescription></CardHeader>
@@ -187,7 +196,7 @@ export function AnalysesPage() {
       <PageHeader title="Analyses" />
       {/* filtres : une seule ligne, au-dessus de tout ce qu'ils pilotent */}
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-2">Mois analysé <Input type="month" className="w-40" value={month} onChange={(ev) => ev.target.value && setMonth(ev.target.value)} /></label>
+        <label className="flex items-center gap-2">Période analysée <Input type="month" className="w-40" value={month} onChange={(ev) => ev.target.value && setMonth(ev.target.value)} /></label>
         <span className="flex items-center gap-1" role="group" aria-label="Horizon de prévision">Prévision
           {[3, 6, 12].map((h) => <Button key={h} size="sm" variant={horizon === h ? 'default' : 'outline'} aria-pressed={horizon === h} onClick={() => setHorizon(h)}>{h} mois</Button>)}
         </span>

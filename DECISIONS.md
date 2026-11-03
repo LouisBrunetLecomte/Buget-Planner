@@ -237,3 +237,7 @@ Pour un compte dont le solde a été saisi à une date :
 - **Revenu en retard** : un revenu non coché 3 jours après sa date déclenche une alerte, même sans import bancaire.
 - **Peu de données** : score de santé et taux d'épargne affichent « Bientôt » ou « — » tant qu'aucune période complète n'a de revenu.
 - **Période future** : ses lignes ne peuvent pas être cochées.
+
+## D46. Analyses sans historique inventé
+- **Courbe de solde** : historique par fin de période (de paie à paie), à partir du premier jour dans l'app (date du solde saisi), plus 12 mois de solde plat inventé. Les graphiques « Revenus et dépenses » partent eux aussi de la première période.
+- **Peu de données** : sans paiements cochés ou importés, les graphiques expliquent comment ils se remplissent au lieu d'afficher des zéros. La comparaison avec l'année précédente n'apparaît que si elle a des données.

@@ -2,11 +2,12 @@ import { eq, gte, inArray, lte, and, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { account, transaction } from './schema'
 import { balances, cachedRates, effectiveOpenings, getSetting, listCategories, putSetting } from './repo'
-import { actualsBetween, currentPeriod, getBudget, resteAVivreFor, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
+import { actualsBetween, appStart, currentPeriod, getBudget, periodDay, resteAVivreFor, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
 import { addDays, addMonths } from '@/core/dates'
+import { periodOf, periodStart } from '@/core/period'
 import { rateOn } from '@/core/fx'
 import { projectBalances } from '@/core/budget'
-import { computeAlerts, dailyBalances, DEFAULT_ALERTS, findAnomalies, healthScore, monthEnds, savingsRate, type Alert, type AlertSettings } from '@/core/analytics'
+import { computeAlerts, dailyBalances, DEFAULT_ALERTS, findAnomalies, healthScore, savingsRate, type Alert, type AlertSettings } from '@/core/analytics'
 
 const LIQUID = ['courant', 'carte', 'especes'] as const
 
@@ -38,8 +39,13 @@ export function balanceHistory(db: Db, from: string, to: string, liquidOnly = fa
 
 /** 12 fins de mois passées + projection budgétaire sur `horizon` mois (tous comptes). */
 export function balanceAndForecast(db: Db, today: string, horizon: number) {
-  const cur = currentPeriod(db, today)
-  const hist = monthEnds(balanceHistory(db, `${addMonths(cur, -11)}-01`, today))
+  const cur = currentPeriod(db, today), day = periodDay(db), started = appStart(db)
+  // historique : fins de période (de paie à paie), à partir du premier jour dans l'app seulement (pas d'historique inventé)
+  let from = periodStart(addMonths(cur, -11), day)
+  if (started && started > from) from = started
+  const ends = new Map<string, number>()
+  for (const p of balanceHistory(db, from, today)) ends.set(periodOf(p.date, day), p.balance)
+  const hist = [...ends].map(([month, balance]) => ({ month, balance }))
   const proj = projectBalances(totalBalance(db), getBudget(db, cur, addMonths(cur, horizon - 1)), cur)
   return { hist, proj }
 }
@@ -90,8 +96,12 @@ export function sankeyData(db: Db, month: string, maxOut = 7) {
 }
 
 /** Revenus et dépenses réels des 12 derniers mois. */
-export const monthlyTotals = (db: Db, today: string, n = 12) =>
-  getBudget(db, addMonths(currentPeriod(db, today), -(n - 1)), currentPeriod(db, today)).map((m) => ({ month: m.month, income: m.actualIncome, expense: m.actualExpense }))
+export function monthlyTotals(db: Db, today: string, n = 12) {
+  const cur = currentPeriod(db, today), started = appStart(db)
+  let from = addMonths(cur, -(n - 1))
+  if (started && periodOf(started, periodDay(db)) > from) from = periodOf(started, periodDay(db))
+  return getBudget(db, from, cur).map((m) => ({ month: m.month, income: m.actualIncome, expense: m.actualExpense }))
+}
 
 /** Dépenses mensuelles de l'année et de la précédente. */
 export function yearOverYear(db: Db, year: number) {

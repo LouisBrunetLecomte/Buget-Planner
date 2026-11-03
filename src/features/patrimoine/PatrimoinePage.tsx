@@ -76,7 +76,7 @@ function Goals() {
         </ul>
       )}
       <Card>
-        <CardHeader><CardTitle>Règles d’épargne</CardTitle><CardDescription>Ce que chaque règle propose de verser, d’après le mois dernier.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Règles d’épargne</CardTitle><CardDescription>Ce que chaque règle propose de verser, d’après la période précédente.{goals.length ? '' : ' Crée d’abord un objectif ci-dessus.'}</CardDescription></CardHeader>
         <CardContent className="grid gap-3">
           {rules.map(({ r, amount }) => (
             <div key={r.id} className="flex flex-wrap items-center gap-2 text-sm">
