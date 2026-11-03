@@ -17,6 +17,7 @@ export const account = sqliteTable('account', {
   currency: text('currency').notNull().default('EUR'),
   openingBalance: integer('opening_balance').notNull().default(0), // centimes, devise du compte
   balanceDate: text('balance_date'), // si renseignée : openingBalance est le solde à cette date (sinon : avant toute opération)
+  balanceSetAt: text('balance_set_at'), // moment de la saisie : ce qui était déjà saisi/coché ce jour-là est compris dans le solde
   bank: text('bank'),
   archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   ...stamps,

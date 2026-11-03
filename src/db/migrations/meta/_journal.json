@@ -43,6 +43,13 @@
       "when": 1793701342233,
       "tag": "0005_pointage",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793715678218,
+      "tag": "0006_solde_confirme",
+      "breakpoints": true
     }
   ]
 }

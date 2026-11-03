@@ -125,7 +125,8 @@ export function computeAlerts(i: AlertInput, s: AlertSettings): Alert[] {
     if (avail <= 0 && r.actual <= 0) continue
     const pct = avail > 0 ? r.actual / avail : Infinity
     if (pct > 1) out.push({ id: `budget100:${r.categoryId}:${i.month.month}`, type: 'budget', severity: 'critique', title: `Budget dépassé : ${i.catLabel(r.categoryId)}`, body: `${eur(r.actual)} dépensés pour ${eur(avail)} prévus.`, href: '#/budget' })
-    else if (pct * 100 >= s.budgetWarnPct) out.push({ id: `budget${s.budgetWarnPct}:${r.categoryId}:${i.month.month}`, type: 'budget', severity: 'attention', title: `${Math.round(pct * 100)} % du budget ${i.catLabel(r.categoryId)}`, body: `Reste ${eur(avail - r.actual)} sur ${eur(avail)}.`, href: '#/budget' })
+    // pile au prévu (case « payé » cochée) : rien d'anormal, pas d'alerte
+    else if (pct * 100 >= s.budgetWarnPct && pct < 1) out.push({ id: `budget${s.budgetWarnPct}:${r.categoryId}:${i.month.month}`, type: 'budget', severity: 'attention', title: `${Math.round(pct * 100)} % du budget ${i.catLabel(r.categoryId)}`, body: `Reste ${eur(avail - r.actual)} sur ${eur(avail)}.`, href: '#/budget' })
   }
   if (s.enabled.solde && i.liquid < s.lowBalance) out.push({ id: `solde:${i.today}`, type: 'solde', severity: i.liquid < 0 ? 'critique' : 'attention', title: 'Solde bas', body: `Tes comptes courants totalisent ${eur(i.liquid)} (seuil ${eur(s.lowBalance)}).`, href: '#/comptes' })
   if (s.enabled.decouvert) {

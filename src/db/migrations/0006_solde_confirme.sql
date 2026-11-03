@@ -1,0 +1,1 @@
+ALTER TABLE `account` ADD `balance_set_at` text;

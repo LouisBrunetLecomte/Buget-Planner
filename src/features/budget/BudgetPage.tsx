@@ -268,7 +268,7 @@ function YearView({ month }: { month: string }) {
 
 export function BudgetPage() {
   const { db, version } = useDb()
-  const [month, setMonth] = useState(() => b.currentPeriod(db, today()))
+  const [month, setMonth] = useState(() => new URLSearchParams(location.hash.split('?')[1]).get('m') ?? b.currentPeriod(db, today()))
   const cur = b.currentPeriod(db, today())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const bounds = useMemo(() => b.periodBounds(db, month), [db, version, month])

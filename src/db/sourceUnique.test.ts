@@ -54,7 +54,7 @@ it('une ligne saisie l’emporte ; « Proposer un budget » ne recompte pas le l
 })
 
 it('solde saisi « aujourd’hui » : les opérations importées d’avant ne s’ajoutent pas une deuxième fois', () => {
-  const acc = repo.createAccount(db, { name: 'LCL', type: 'courant', openingBalance: 125000, balanceDate: '2026-11-03' })
+  const acc = repo.createAccount(db, { name: 'LCL', type: 'courant', openingBalance: 125000, balanceDate: '2026-11-03', balanceSetAt: '2026-11-03 00:00:00' })
   repo.importRows(db, acc.id, 'r.csv', [{ date: '2026-10-15', amount: -5000, label: 'A' }, { date: '2026-11-03', amount: -1000, label: 'B' }])
   expect(repo.balances(db).get(acc.id)).toBe(125000)
   repo.addTransaction(db, { accountId: acc.id, date: '2026-11-04', amount: -2000, label: 'C' })

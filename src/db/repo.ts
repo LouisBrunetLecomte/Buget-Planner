@@ -17,17 +17,21 @@ export type Tx = typeof transaction.$inferSelect
 export type Rule = typeof rule.$inferSelect
 
 const now = sql`(datetime('now'))`
+/** Horodatage au format de SQLite (datetime('now'), UTC) : comparable à created_at. */
+export const stamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
 
 // ---------- comptes ----------
 export const listAccounts = (db: Db) => db.select().from(account).orderBy(account.archived, account.name).all()
 
 /**
  * Solde « d'ouverture » effectif : si le solde a été saisi à une date (« 1 250 € aujourd'hui »), les opérations d'avant
- * (et celles du jour venues d'un relevé importé) y sont déjà comprises ; on les retranche. Ce qu'on saisit ou coche ensuite compte.
+ * (et celles du jour importées) y sont déjà comprises ; on les retranche. confirmBalance neutralise aussi ce qui était déjà
+ * saisi ou coché le jour même. Ce qu'on saisit ou coche ensuite compte.
  */
 export function effectiveOpenings(db: Db): Map<string, number> {
   const rows = db.select({ id: account.id, open: account.openingBalance,
-    before: sql<number>`coalesce(sum(case when ${account.balanceDate} is not null and (${transaction.date} < ${account.balanceDate} or (${transaction.date} = ${account.balanceDate} and ${transaction.importKey} is not null)) then ${transaction.amount} else 0 end), 0)` })
+    before: sql<number>`coalesce(sum(case when ${account.balanceDate} is not null and (${transaction.date} < ${account.balanceDate}
+      or (${transaction.date} = ${account.balanceDate} and ${transaction.importKey} is not null)) then ${transaction.amount} else 0 end), 0)` })
     .from(account).leftJoin(transaction, eq(transaction.accountId, account.id)).groupBy(account.id).all()
   return new Map(rows.map((r) => [r.id, r.open - r.before]))
 }
@@ -40,10 +44,19 @@ export function balances(db: Db): Map<string, number> {
   return new Map(rows.map((r) => [r.id, open.get(r.id)! + r.sum]))
 }
 
-export const createAccount = (db: Db, v: typeof account.$inferInsert) => db.insert(account).values(v).returning().get()
+export const createAccount = (db: Db, v: typeof account.$inferInsert) => db.insert(account).values({ ...v, ...(v.balanceDate && !v.balanceSetAt ? { balanceSetAt: stamp() } : {}) }).returning().get()
 export const updateAccount = (db: Db, id: string, v: Partial<typeof account.$inferInsert>) =>
   db.update(account).set({ ...v, updatedAt: now }).where(eq(account.id, id)).run()
 export const deleteAccount = (db: Db, id: string) => db.delete(account).where(eq(account.id, id)).run()
+
+/** « Ma banque affiche X € aujourd'hui » : tout ce qui est déjà saisi ou coché jusqu'à maintenant est considéré comme compris. */
+export function confirmBalance(db: Db, id: string, cents: number, date: string) {
+  if (!Number.isInteger(cents)) throw new Error('Montant invalide')
+  // les saisies/cochages déjà faits à cette date sont compris dans le montant de la banque : on les neutralise
+  const sameDay = db.select({ s: sql<number>`coalesce(sum(${transaction.amount}), 0)` }).from(transaction)
+    .where(and(eq(transaction.accountId, id), eq(transaction.date, date), isNull(transaction.importKey))).get()!.s
+  db.update(account).set({ openingBalance: cents - sameDay, balanceDate: date, balanceSetAt: stamp(), updatedAt: now }).where(eq(account.id, id)).run()
+}
 
 // ---------- catégories ----------
 export const listCategories = (db: Db) => db.select().from(category).orderBy(category.kind, category.name).all()

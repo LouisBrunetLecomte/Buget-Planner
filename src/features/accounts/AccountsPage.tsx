@@ -27,8 +27,15 @@ function AccountDialog({ acc, onClose }: { acc: repo.Account | null; onClose: ()
     if (cents === null) return attempt(() => { throw new Error('Solde initial illisible') })
     const cur = currency.trim().toUpperCase()
     if (!/^[A-Z]{3}$/.test(cur)) return attempt(() => { throw new Error('Devise : code ISO à 3 lettres (EUR, USD…)') })
-    const v = { name: name.trim(), type, currency: cur, bank: bank.trim() || null, openingBalance: cents, balanceDate: balanceDate || null }
-    const ok = attempt(() => mutate((d) => acc ? repo.updateAccount(d, acc.id, v) : repo.createAccount(d, v)), acc ? 'Compte modifié' : 'Compte créé')
+    const v = { name: name.trim(), type, currency: cur, bank: bank.trim() || null, openingBalance: cents, balanceDate: balanceDate || null, balanceSetAt: balanceDate ? repo.stamp() : null }
+    const ok = attempt(() => mutate((d) => {
+      if (!acc) return repo.createAccount(d, v)
+      repo.updateAccount(d, acc.id, { ...v, openingBalance: acc.openingBalance, balanceDate: acc.balanceDate })
+      // solde modifié : même règle que « corriger » sur l'accueil (ce qui est déjà saisi ce jour-là est compris)
+      if (v.balanceDate) repo.confirmBalance(d, acc.id, cents, v.balanceDate)
+      else repo.updateAccount(d, acc.id, { openingBalance: cents, balanceDate: null })
+      return true
+    }), acc ? 'Compte modifié' : 'Compte créé')
     if (ok) onClose()
   }
   return (

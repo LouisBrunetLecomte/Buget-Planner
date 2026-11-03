@@ -70,3 +70,17 @@ it('démarrage en milieu de période : l’enveloppe est comptée au prorata des
   // période suivante : enveloppe entière
   expect(b.getBudget(db, '2026-11', '2026-11')[0]!.rows.find((x) => x.categoryId === cats.get('Courses'))!.toCome).toBe(31000)
 })
+
+it('corriger le solde : ce qui était déjà coché est compris, ce qu’on coche ensuite compte', () => {
+  const acc = repo.createAccount(db, { name: 'LCL', type: 'courant', openingBalance: 100000 }) // ancien compte, sans date de solde
+  const sal = b.createRecurring(db, { name: 'Salaire', kind: 'revenu', amount: 210000, freq: 'month', interval: 1, startDate: '2026-10-28', categoryId: cats.get('Salaire')! })
+  b.tickOccurrence(db, sal.id, '2026-10-28', '2026-11-03')
+  b.setBudget(db, cats.get('Courses')!, '2026-11', 40000, 'from')
+  repo.putSetting(db, 'periodStartDay', 1)
+  b.tickLine(db, cats.get('Courses')!, '2026-11', 40000, '2026-11-03')
+  expect(repo.balances(db).get(acc.id)).toBe(100000 + 210000 - 40000) // faux : le salaire était déjà dans les 1 000 €
+  repo.confirmBalance(db, acc.id, 61234, '2026-11-03') // ce qu'affiche la banque
+  expect(repo.balances(db).get(acc.id)).toBe(61234)
+  repo.addTransaction(db, { accountId: acc.id, date: '2026-11-04', amount: -1000, label: 'Pain' })
+  expect(repo.balances(db).get(acc.id)).toBe(60234)
+})

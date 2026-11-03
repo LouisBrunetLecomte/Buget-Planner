@@ -93,9 +93,9 @@ export function Empty({ children }: { children: ReactNode }) {
 
 /** Navigation par hash (#/operations) : fonctionne sur GitHub Pages sans configuration serveur. */
 export function useRoute(): string {
-  const [r, setR] = useState(() => location.hash.slice(2) || 'accueil')
+  const [r, setR] = useState(() => location.hash.slice(2).split('?')[0] || 'accueil')
   useEffect(() => {
-    const f = () => setR(location.hash.slice(2) || 'accueil')
+    const f = () => setR(location.hash.slice(2).split('?')[0] || 'accueil')
     addEventListener('hashchange', f)
     return () => removeEventListener('hashchange', f)
   }, [])

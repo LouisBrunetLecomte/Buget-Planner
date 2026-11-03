@@ -253,3 +253,10 @@ Pour un compte dont le solde a été saisi à une date :
 - **En grand** : le solde réel des comptes courants, le même chiffre que l'app de la banque (lien pour le corriger).
 - **En dessous** : ce qu'il en restera après les charges et le budget d'ici la prochaine paie, et par jour.
 - **Argent attendu** (revenu non coché) : affiché à part, jamais ajouté. Avant, il gonflait le chiffre principal, qui ne correspondait plus au compte.
+
+## D49. Solde confirmé par l'utilisateur, prévisions sur l'accueil
+- **Pourquoi** : Buget ne peut pas deviner le solde bancaire. Un compte créé sans date de solde comptait une deuxième fois ce qui était déjà dans ce solde.
+- **Correction** : on touche le montant sur l'accueil et on saisit ce qu'affiche la banque. `confirmBalance` fixe le solde à la date du jour et neutralise ce qui était déjà saisi ou coché ce jour-là. Ce qui vient ensuite compte, et ce qui est daté d'avant est considéré comme déjà compris. La date de confirmation est affichée, avec un rappel si elle manque ou date de plus de 7 jours.
+- **Prévisions** : le solde des comptes courants avant chaque paie sur 6 périodes. Un clic ouvre le budget de cette période (`#/budget?m=…`).
+- **Alertes de budget** : pas d'alerte quand une ligne est payée pile au prévu, seulement en cas de dépassement. L'accueil ne montre que le dépassement, le salaire pas reçu et les doublons. Le découvert y est déjà visible en rouge.
+- **Listes** : « À payer » et les postes de budget terminés sont masqués quand il n'y a rien à faire.
