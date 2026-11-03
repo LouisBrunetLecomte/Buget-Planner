@@ -7,7 +7,10 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { today } from '@/core/dates'
 import * as repo from '@/db/repo'
-import { changePassword, exportBackup, getHistory, mutate, undoTo, wipeAll, MIN_PASSWORD } from '@/app/store'
+import { changePassword, exportBackup, getHistory, mutate, undoTo, verifyPassword, wipeAll, MIN_PASSWORD } from '@/app/store'
+import { hasTouchIdBridge, touchIdDisable, touchIdEnroll, touchIdStatus } from '@/app/macAuth'
+import { Fingerprint } from 'lucide-react'
+import { useEffect } from 'react'
 import { putSetting } from '@/db/repo'
 import { PageHeader, useAccounts } from '@/app/ui'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -23,6 +26,32 @@ const TYPES: [AlertType, string][] = [
   ['echeance', 'Prélèvement à venir'], ['revenu', 'Revenu attendu non reçu'], ['anomalie', 'Anomalies (doublons, montants inhabituels, frais)'],
 ]
 
+function TouchIdCard() {
+  const [st, setSt] = useState<{ available: boolean; enrolled: boolean } | null>(null), [pw, setPw] = useState('')
+  const refresh = () => void touchIdStatus().then(setSt)
+  useEffect(refresh, [])
+  if (!hasTouchIdBridge || !st) return null
+  return (
+    <Card>
+      <CardHeader><CardTitle className="flex items-center gap-2"><Fingerprint className="size-5" />Touch ID</CardTitle>
+        <CardDescription>{!st.available ? 'Touch ID n’est pas disponible (aucune empreinte enregistrée, ou Mac fermé avec un clavier externe).'
+          : st.enrolled ? 'Activé : ton empreinte déverrouille Buget. Le mot de passe reste possible en secours.' : 'Désactivé : seul le mot de passe déverrouille Buget.'}</CardDescription></CardHeader>
+      {st.available && <CardContent>
+        {st.enrolled ? <Button variant="outline" onClick={() => void touchIdDisable().then(() => { toast.success('Touch ID désactivé'); refresh() })}>Désactiver Touch ID</Button> : (
+          <form className="flex gap-2" onSubmit={async (e) => {
+            e.preventDefault()
+            if (!(await verifyPassword(pw))) return toast.error('Mot de passe incorrect')
+            await touchIdEnroll(pw); setPw(''); toast.success('Touch ID activé'); refresh()
+          }}>
+            <Input type="password" aria-label="Mot de passe actuel" placeholder="Mot de passe actuel" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} required />
+            <Button type="submit">Activer</Button>
+          </form>
+        )}
+      </CardContent>}
+    </Card>
+  )
+}
+
 function SecurityCard() {
   const [cur, setCur] = useState(''), [next, setNext] = useState(''), [busy, setBusy] = useState(false)
   return (
@@ -31,7 +60,7 @@ function SecurityCard() {
       <CardContent>
         <form className="grid gap-2" onSubmit={async (e) => {
           e.preventDefault(); setBusy(true)
-          try { await changePassword(cur, next); toast.success('Mot de passe changé'); setCur(''); setNext('') }
+          try { await changePassword(cur, next); if ((await touchIdStatus()).enrolled) await touchIdEnroll(next); toast.success('Mot de passe changé'); setCur(''); setNext('') }
           catch (err) { toast.error(err instanceof Error ? err.message : String(err)) } finally { setBusy(false) }
         }}>
           <Input type="password" aria-label="Mot de passe actuel" placeholder="Mot de passe actuel" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} required />
@@ -158,6 +187,7 @@ export function SettingsPage() {
         <AlertsCard />
         <ModulesCard />
         <HistoryCard />
+        <TouchIdCard />
         <SecurityCard />
         <Card>
           <CardHeader><CardTitle>Apparence</CardTitle></CardHeader>
@@ -192,7 +222,7 @@ export function SettingsPage() {
           <CardHeader><CardTitle>Supprimer toutes mes données</CardTitle><CardDescription>Efface définitivement la base de cet appareil. Tape SUPPRIMER pour confirmer.</CardDescription></CardHeader>
           <CardContent className="flex gap-2">
             <Input ref={wipeRef} aria-label="Confirmation de suppression" placeholder="SUPPRIMER" />
-            <Button variant="destructive" onClick={() => { if (wipeRef.current?.value === 'SUPPRIMER') void wipeAll(); else toast.error('Tape SUPPRIMER pour confirmer') }}>Tout effacer</Button>
+            <Button variant="destructive" onClick={() => { if (wipeRef.current?.value === 'SUPPRIMER') void touchIdDisable().then(wipeAll); else toast.error('Tape SUPPRIMER pour confirmer') }}>Tout effacer</Button>
           </CardContent>
         </Card>
       </div>

@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import WebKit
 
 /// Buget : fenêtre native qui affiche l'app web locale (données chiffrées dans le stockage de WebKit propre à l'app).
-final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, WKDownloadDelegate, WKScriptMessageHandlerWithReply {
     var window: NSWindow!
     var webView: WKWebView!
     var popups: [NSWindow] = []
@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         config.websiteDataStore = .default() // persistant : la base chiffrée survit aux redémarrages
         config.applicationNameForUserAgent = "BugetMac/1.0"
         config.preferences.isElementFullscreenEnabled = true
+        config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "bugetAuth")
         webView = makeWebView(config)
 
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
@@ -44,6 +45,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         w.isInspectable = true
         w.allowsBackForwardNavigationGestures = false
         return w
+    }
+
+    // MARK: pont Touch ID ↔ app web (réservé à la page principale de l'app, servie par 127.0.0.1)
+    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage, replyHandler reply: @escaping (Any?, String?) -> Void) {
+        let o = m.frameInfo.securityOrigin
+        guard m.frameInfo.isMainFrame, o.host == "127.0.0.1", o.port == Int(LocalServer.port), m.webView === webView,
+              let body = m.body as? [String: Any], let action = body["action"] as? String else { return reply(nil, "Refusé") }
+        switch action {
+        case "status": reply(["available": TouchID.available, "enrolled": TouchID.enrolled], nil)
+        case "enroll":
+            guard TouchID.available, let pw = body["password"] as? String, !pw.isEmpty else { return reply(nil, "Touch ID indisponible") }
+            do { try TouchID.enroll(secret: pw); reply(true, nil) } catch { reply(nil, error.localizedDescription) }
+        case "unlock":
+            guard TouchID.enrolled else { return reply(nil, "Touch ID n’est pas activé") }
+            Task { @MainActor in
+                do { reply(try await TouchID.unlock(), nil) } catch { reply(nil, error.localizedDescription) }
+            }
+        case "disable": TouchID.disable(); reply(true, nil)
+        default: reply(nil, "Action inconnue")
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }

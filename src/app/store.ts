@@ -114,6 +114,13 @@ export async function undoTo(index: number) {
 }
 export const undo = () => undoTo(history.length - 1)
 
+/** Vérifie un mot de passe contre le coffre, sans rien ouvrir. */
+export async function verifyPassword(password: string): Promise<boolean> {
+  const v = await loadVault()
+  if (!v) return false
+  try { await open(await deriveKey(password, v.salt), v); return true } catch { return false }
+}
+
 /** Nouveau mot de passe : nouveau sel, nouvelle clé, sauvegarde immédiate. */
 export async function changePassword(current: string, next: string) {
   if (next.length < MIN_PASSWORD) throw new Error(`${MIN_PASSWORD} caractères minimum.`)

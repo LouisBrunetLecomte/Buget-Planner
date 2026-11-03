@@ -162,3 +162,14 @@ Un petit module remplace next-themes, dont le script en ligne était incompatibl
   - pas de service worker (inutile dans une app locale) ;
   - `NSAllowsLocalNetworking` seulement, sans exception HTTP générale.
 - **Limite** : les notifications du navigateur ne sont pas disponibles dans WebKit intégré ; les alertes restent visibles dans l'app.
+
+## D36. Déverrouillage par Touch ID (app Mac)
+- **Mécanisme** : le mot de passe est chiffré (AES-GCM) avec une clé issue d'un échange ECDH, dont la clé privée est générée et gardée dans la **Secure Enclave**.
+  - Elle n'est utilisable qu'après une empreinte, sur ce Mac uniquement (`.biometryCurrentSet`).
+  - Si les empreintes changent (ajout d'un doigt), elle est invalidée.
+  - Le fichier stocké (`~/Library/Application Support/Buget/touchid.json`, droits 600) est donc inexploitable sans empreinte.
+  - Pas de trousseau : le trousseau « protégé par biométrie » exige un compte développeur Apple, alors que la Secure Enclave via CryptoKit fonctionne avec la signature locale.
+- **Le mot de passe reste nécessaire en secours** : c'est lui qui chiffre la base, et sans lui un Mac fermé avec clavier externe, un doigt mouillé ou de nouvelles empreintes bloqueraient l'accès.
+  - Touch ID se (ré)active automatiquement à la création de la base, au déverrouillage par mot de passe, au changement de mot de passe et à la restauration d'une sauvegarde.
+  - Il est oublié lors de l'effacement total des données.
+- **Pont JavaScript ↔ Swift** : il n'accepte que les messages de la page principale servie par 127.0.0.1:47219.

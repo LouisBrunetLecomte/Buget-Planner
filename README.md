@@ -12,6 +12,7 @@ npm install
 Buget s'ouvre ensuite comme n'importe quelle app (Launchpad, Spotlight, Dock). C'est une fenêtre native (Swift + WebKit) qui affiche l'app web embarquée, servie uniquement sur `127.0.0.1:47219`.
 - **Données** : elles sont chiffrées dans le stockage WebKit propre à l'app (`~/Library/WebKit/local.louloubl.Buget`) et sont conservées quand tu réinstalles une nouvelle version.
 - **Téléchargements** (sauvegardes, PDF, CSV) : ils arrivent dans `~/Téléchargements`.
+- **Touch ID** : après la création de la base ou un premier déverrouillage au mot de passe, ton empreinte suffit pour ouvrir Buget. Le mot de passe reste utilisable en secours (« Utiliser le mot de passe »). L'option se règle dans Réglages → Touch ID.
 - **Prérequis** : macOS 26 et les outils de ligne de commande Xcode (`xcode-select --install`).
 
 ## Installer et lancer (navigateur)
