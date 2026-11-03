@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 
 const fmtDay = (d: string) => new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
 const Section = ({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) => (
-  <section className={cn('rounded-2xl border bg-card p-5', className)}><h2 className="mb-3 text-sm font-medium text-muted-foreground">{title}</h2>{children}</section>
+  <section className={cn('rounded-3xl bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.06)] dark:shadow-none', className)}><h2 className="mb-4 text-[17px] font-semibold tracking-tight">{title}</h2>{children}</section>
 )
 
 /**
@@ -52,8 +52,8 @@ function Balance() {
   }
   if (!accounts.length) return <Empty>Ajoute ton compte courant avec son solde dans <a className="underline" href="#/comptes">Comptes</a>.</Empty>
   return (
-    <section className="rounded-2xl border bg-card px-5 py-8 text-center">
-      <p className="text-sm text-muted-foreground">{accounts.length > 1 ? 'Sur tes comptes' : 'Sur ton compte'}</p>
+    <section className="px-5 pt-6 pb-10 text-center">
+      <p className="text-[17px] text-muted-foreground">{accounts.length > 1 ? 'Sur tes comptes' : 'Sur ton compte'}</p>
       {editing ? (
         <form className="mx-auto my-3 grid max-w-xs gap-2" onSubmit={(e) => { e.preventDefault(); save() }}>
           {accounts.map((a) => (
@@ -64,12 +64,12 @@ function Balance() {
           <div className="flex justify-center gap-2"><Button type="submit">Enregistrer</Button><Button type="button" variant="ghost" onClick={() => setEditing(false)}>Annuler</Button></div>
         </form>
       ) : (
-        <button type="button" onClick={startEdit} className="my-1 block w-full text-5xl font-semibold tracking-tight" title="Corriger avec le montant de ta banque">{formatMoney(d.x.liquid)}</button>
+        <button type="button" onClick={startEdit} className="my-2 block w-full text-6xl font-semibold tracking-tight md:text-[80px] md:leading-none" title="Corriger avec le montant de ta banque">{formatMoney(d.x.liquid)}</button>
       )}
       {!editing && (stale
         ? <button type="button" onClick={startEdit} className="text-sm text-amber-700 underline dark:text-amber-400">Vérifie ce montant avec ta banque et corrige-le si besoin</button>
         : <p className="text-xs text-muted-foreground">Confirmé le {new Date(last!).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: 'UTC' })} · touche le montant pour le corriger</p>)}
-      <p className={cn('mt-4 text-sm', d.after < 0 ? 'text-destructive' : 'text-muted-foreground')}>
+      <p className={cn('mt-6 text-[17px]', d.after < 0 ? 'text-destructive' : 'text-muted-foreground')}>
         Après tes charges et ton budget : <strong className="font-medium text-foreground">{formatMoney(d.after)}</strong>
         {d.after > 0 && <> · {formatMoney(d.perDay)} par jour</>} jusqu’au {fmtDay(d.payday)}
       </p>
@@ -88,18 +88,18 @@ function Forecast() {
   }, [db, version])
   const short = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
   return (
-    <Section title="Prévisions : ton solde avant chaque paie">
+    <Section title="Prévisions">
       <ol className="grid grid-cols-3 gap-2 sm:grid-cols-6">
         {rows.map((r) => (
           <li key={r.month}>
-            <a href={`#/budget?m=${r.month}`} className={cn('block rounded-xl border p-2.5 text-center hover:bg-muted', r.balance < 0 && 'border-destructive/60')}>
+            <a href={`#/budget?m=${r.month}`} className={cn('block rounded-2xl bg-secondary p-3 text-center transition-colors hover:bg-accent dark:bg-accent dark:hover:bg-[#3a3a3c]', r.balance < 0 && 'ring-1 ring-destructive/50')}>
               <span className="block text-xs text-muted-foreground">{short(r.end)}</span>
               <span className={cn('block text-sm font-medium tabular-nums', r.balance < 0 && 'text-destructive')}>{formatMoney(r.balance)}</span>
             </a>
           </li>
         ))}
       </ol>
-      <p className="mt-2 text-xs text-muted-foreground">D’après ton budget et tes échéances. Clique sur un mois pour le modifier (vacances, prime…).</p>
+      <p className="mt-3 text-xs text-muted-foreground">Ton solde avant chaque paie, d’après ton budget. Clique sur un mois pour l’ajuster.</p>
     </Section>
   )
 }
@@ -139,7 +139,8 @@ function Due() {
 /** Ce qu'il reste dans chaque poste du budget (courses, sorties…), le plus gros en haut. */
 function Envelopes() {
   const { db, version } = useDb()
-  const { label } = useCategories()
+  const { byId } = useCategories()
+  const label = (id: string) => byId.get(id)?.name ?? '?'
   const rows = useMemo(() => {
     const cur = b.currentPeriod(db, today())
     return b.getBudget(db, cur, cur)[0]!.rows.filter((r) => r.kind === 'depense' && !(r.items.length && !r.exception) && r.remaining !== 0).sort((x, y) => y.planned + y.carry - (x.planned + x.carry))
@@ -212,7 +213,7 @@ export function HomePage() {
   const accounts = useAccounts()
   if (!accounts.length) return <Empty>Bienvenue ! Commence par <a className="underline" href="#/comptes">ajouter ton compte</a> avec son solde actuel.</Empty>
   return (
-    <div className="mx-auto grid max-w-3xl gap-4">
+    <div className="mx-auto grid max-w-3xl gap-5">
       <h1 className="sr-only">Accueil</h1>
       <Balance />
       <Alerts />

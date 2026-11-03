@@ -3,7 +3,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Badge } from '@/components/ui/badge'
 import { parseAmount, formatMoney } from '@/core/money'
 import { normalizeLabel } from '@/core/labels'
 import { categorize } from '@/core/rules'
@@ -115,15 +114,28 @@ export function TransactionsPage() {
   }), [db, version, q, accountId, categoryId, month, onlyUncat, scope])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const splitIds = useMemo(() => repo.listSplitTxIds(db), [db, version])
-  const accName = (id: string) => accounts.find((a) => a.id === id)?.name ?? ''
   const visibleSel = txs.filter((t) => selected.has(t.id)).map((t) => t.id)
-  const total = txs.filter((t) => !t.transferGroupId).reduce((s, t) => s + t.amountEur, 0)
+  const running = useMemo(() => {
+    const acc = accountId ? accounts.find((a) => a.id === accountId) : accounts.filter((a) => !a.archived).length === 1 ? accounts.find((a) => !a.archived) : undefined
+    if (!acc || q.trim() || categoryId || month || onlyUncat || scope !== 'all') return null
+    // on part du solde actuel et on remonte le temps ; ce qui précède la date du solde saisi y est déjà compris
+    let bal = repo.balances(db).get(acc.id) ?? 0
+    const out = new Map<string, number>()
+    for (const t of txs) {
+      if (t.accountId !== acc.id) continue
+      out.set(t.id, bal)
+      const counted = !acc.balanceDate || t.date > acc.balanceDate || (t.date === acc.balanceDate && !t.importKey)
+      if (counted) bal -= t.amount
+    }
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version, txs, accountId, accounts, q, categoryId, month, onlyUncat, scope])
 
-  if (!accounts.length) return <><PageHeader title="Opérations" /><Empty>Crée d’abord un compte dans l’onglet <a className="underline" href="#/comptes">Comptes</a>.</Empty></>
+  if (!accounts.length) return <><PageHeader title="Journal" /><Empty>Crée d’abord un compte dans l’onglet <a className="underline" href="#/comptes">Comptes</a>.</Empty></>
 
   return (
     <>
-      <PageHeader title="Opérations" />
+      <PageHeader title="Journal" subtitle="Toutes tes opérations, comme sur un relevé : débit, crédit et solde." />
       <QuickAdd />
       <TransferSuggestions />
       {/* recherche toujours visible ; les autres filtres seulement sur demande */}
@@ -158,41 +170,41 @@ export function TransactionsPage() {
       )}
 
       {txs.length === 0 ? <Empty>Aucune opération. Ajoute-en une ci-dessus ou <a className="underline" href="#/import">importe un relevé</a>.</Empty> : (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[15px]">
+            <thead className="text-left text-xs text-muted-foreground">
               <tr>
-                <th className="w-8 p-2"><Checkbox aria-label="Tout sélectionner" checked={visibleSel.length === txs.length} onCheckedChange={(v) => setSelected(v === true ? new Set(txs.map((t) => t.id)) : new Set())} /></th>
-                <th className="p-2">Date</th><th className="p-2">Libellé</th><th className="hidden p-2 md:table-cell">Catégorie</th><th className="hidden p-2 lg:table-cell">Compte</th><th className="p-2 text-right">Montant</th>
+                <th className="w-8 pb-2"><Checkbox aria-label="Tout sélectionner" checked={visibleSel.length === txs.length} onCheckedChange={(v) => setSelected(v === true ? new Set(txs.map((t) => t.id)) : new Set())} /></th>
+                <th className="pb-2 font-normal">Date</th><th className="pb-2 font-normal">Libellé</th><th className="hidden pb-2 font-normal md:table-cell">Catégorie</th>
+                <th className="pb-2 text-right font-normal">Débit</th><th className="pb-2 text-right font-normal">Crédit</th>
+                {running && <th className="hidden pb-2 pl-4 text-right font-normal sm:table-cell">Solde</th>}
               </tr>
             </thead>
             <tbody>
               {txs.map((t) => (
-                <tr key={t.id} className="cursor-pointer border-t hover:bg-muted/40" onClick={() => setEditing(t)}>
-                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                <tr key={t.id} className="cursor-pointer border-t border-border/70 hover:bg-secondary/60" onClick={() => setEditing(t)}>
+                  <td className="py-3" onClick={(e) => e.stopPropagation()}>
                     <Checkbox aria-label={`Sélectionner ${t.label}`} checked={selected.has(t.id)} onCheckedChange={(v) => { const s = new Set(selected); if (v === true) s.add(t.id); else s.delete(t.id); setSelected(s) }} />
                   </td>
-                  <td className="whitespace-nowrap p-2 tabular-nums">{new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'UTC' })}</td>
-                  <td className="max-w-[16rem] p-2">
-                    <button type="button" className="block w-full truncate text-left font-medium" onClick={(e) => { e.stopPropagation(); setEditing(t) }}>{t.label}</button>
-                    <span className="block truncate text-xs text-muted-foreground md:hidden">{t.transferGroupId ? 'Virement interne' : splitIds.has(t.id) ? 'Ventilée' : catLabel(t.categoryId) ?? 'Non catégorisé'}</span>
+                  <td className="whitespace-nowrap py-3 pr-3 tabular-nums text-muted-foreground">{new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'UTC' })}</td>
+                  <td className="max-w-[18rem] py-3 pr-3">
+                    <button type="button" className="block w-full truncate text-left" onClick={(e) => { e.stopPropagation(); setEditing(t) }}>{t.label}</button>
+                    <span className="block truncate text-xs text-muted-foreground md:hidden">{t.transferGroupId ? 'Virement interne' : splitIds.has(t.id) ? 'Ventilée' : catLabel(t.categoryId) ?? 'À catégoriser'}</span>
                     {t.notes && <span className="block truncate text-xs text-muted-foreground">{t.notes}</span>}
                   </td>
-                  <td className="hidden p-2 md:table-cell">
-                    {t.transferGroupId ? <Badge variant="secondary">Virement interne</Badge>
-                      : splitIds.has(t.id) ? <Badge variant="outline">Ventilée</Badge>
-                      : t.categoryId ? <span>{catLabel(t.categoryId)}</span>
-                      : <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-400">À catégoriser</Badge>}
+                  <td className="hidden py-3 pr-3 text-muted-foreground md:table-cell">
+                    {t.transferGroupId ? 'Virement interne' : splitIds.has(t.id) ? 'Ventilée' : t.categoryId ? catLabel(t.categoryId) : <span className="text-amber-700 dark:text-amber-400">À catégoriser</span>}
                   </td>
-                  <td className="hidden p-2 text-muted-foreground lg:table-cell">{accName(t.accountId)}</td>
-                  <td className="p-2 text-right">
-                    <Money cents={t.amount} currency={t.currency} />
-                    {t.currency !== 'EUR' && <span className="block text-xs text-muted-foreground">{formatMoney(t.amountEur)}</span>}
-                  </td>
+                  <td className="py-3 text-right tabular-nums">{t.amount < 0 ? formatMoney(-t.amount, t.currency) : ''}</td>
+                  <td className="py-3 text-right tabular-nums text-emerald-700 dark:text-emerald-400">{t.amount > 0 ? formatMoney(t.amount, t.currency) : ''}</td>
+                  {running && <td className="hidden py-3 pl-4 text-right tabular-nums sm:table-cell">{running.get(t.id) !== undefined ? formatMoney(running.get(t.id)!, t.currency) : ''}</td>}
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr className="border-t bg-muted/30 text-sm"><td colSpan={5} className="p-2 text-right text-muted-foreground">Solde net affiché (hors virements internes, en EUR)</td><td className="p-2 text-right font-medium"><Money cents={total} /></td></tr></tfoot>
+            <tfoot><tr className="border-t border-foreground/20 font-medium"><td colSpan={4} className="py-3">Total affiché (hors virements internes)</td>
+              <td className="py-3 text-right tabular-nums">{formatMoney(txs.filter((t) => !t.transferGroupId && t.amountEur < 0).reduce((x, t) => x - t.amountEur, 0))}</td>
+              <td className="py-3 text-right tabular-nums">{formatMoney(txs.filter((t) => !t.transferGroupId && t.amountEur > 0).reduce((x, t) => x + t.amountEur, 0))}</td>
+              {running && <td className="hidden sm:table-cell" />}</tr></tfoot>
           </table>
         </div>
       )}

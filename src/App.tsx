@@ -18,11 +18,11 @@ import { BudgetPage } from '@/features/budget/BudgetPage'
 // pages chargées à la demande : graphiques, PDF, OCR ne pèsent pas sur le démarrage
 const named = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })))
 const PAGES: Record<string, [string, ComponentType, 'main' | 'more']> = {
-  accueil: ['Accueil', HomePage, 'main'],
+  accueil: ['Aperçu', HomePage, 'main'],
   budget: ['Budget', BudgetPage, 'main'],
-  operations: ['Opérations', TransactionsPage, 'main'],
+  operations: ['Journal', TransactionsPage, 'main'],
+  comptes: ['Comptes', named(() => import('@/features/accounts/AccountsPage'), 'AccountsPage'), 'main'],
   recurrences: ['Salaire et charges fixes', named(() => import('@/features/recurring/RecurringPage'), 'RecurringPage'), 'more'],
-  comptes: ['Comptes', named(() => import('@/features/accounts/AccountsPage'), 'AccountsPage'), 'more'],
   analyses: ['Analyses', named(() => import('@/features/analyses/AnalysesPage'), 'AnalysesPage'), 'more'],
   patrimoine: ['Épargne et crédits', named(() => import('@/features/patrimoine/PatrimoinePage'), 'PatrimoinePage'), 'more'],
   simulations: ['Simulations', named(() => import('@/features/simulations/SimulationsPage'), 'SimulationsPage'), 'more'],
@@ -62,39 +62,35 @@ function Shell() {
   })
   const [, Page] = PAGES[route] ?? PAGES.accueil!
   const entries = Object.entries(PAGES)
-  const link = (k: string, label: string) => (
-    <a key={k} href={`#/${k}`} aria-current={route === k ? 'page' : undefined}
-      className={cn('rounded-md px-2.5 py-1.5 text-sm hover:bg-muted', route === k && 'bg-muted font-medium')}>{label}</a>
-  )
   return (
     <div className="min-h-dvh pb-16 lg:pb-0">
-      <header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2">
-          <a href="#/accueil" className="font-semibold">Buget</a>
-          <nav aria-label="Navigation principale" className="hidden items-center gap-0.5 lg:flex">
-            {entries.filter(([, [, , g]]) => g === 'main').map(([k, [label]]) => link(k, label))}
+      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/72 backdrop-blur-xl backdrop-saturate-180">
+        <div className="mx-auto flex h-12 max-w-5xl items-center gap-6 px-5">
+          <a href="#/accueil" className="text-[15px] font-semibold tracking-tight">Buget</a>
+          <nav aria-label="Navigation principale" className="hidden flex-1 items-center justify-center gap-7 text-[13px] lg:flex">
+            {entries.filter(([, [, , g]]) => g === 'main').map(([k, [label]]) => (
+              <a key={k} href={`#/${k}`} aria-current={route === k ? 'page' : undefined} className={cn('transition-colors hover:text-foreground', route === k ? 'text-foreground' : 'text-muted-foreground')}>{label}</a>
+            ))}
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className={cn(PAGES[route]?.[2] === 'more' && 'bg-muted font-medium')}>Plus <ChevronDown /></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuTrigger className={cn('flex items-center gap-0.5 transition-colors hover:text-foreground', PAGES[route]?.[2] === 'more' ? 'text-foreground' : 'text-muted-foreground')}>Plus <ChevronDown className="size-3.5" /></DropdownMenuTrigger>
+              <DropdownMenuContent align="center">
                 {entries.filter(([, [, , g]]) => g === 'more').map(([k, [label]]) => <DropdownMenuItem key={k} asChild><a href={`#/${k}`}>{label}</a></DropdownMenuItem>)}
               </DropdownMenuContent>
             </DropdownMenu>
           </nav>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-0.5 lg:ml-0">
             {s.status === 'open' && s.saveError && <span role="alert" className="text-xs text-destructive">Échec de sauvegarde : {s.saveError}</span>}
-            <Button variant="ghost" size="icon" aria-label={last ? `Annuler : ${last.label}` : 'Rien à annuler'} title={last ? `Annuler : ${last.label} (⌘Z)` : undefined} disabled={!last} onClick={doUndo}><Undo2 /></Button>
-            <Button variant="ghost" size="icon" aria-label={hidden ? 'Afficher les montants' : 'Masquer les montants'} aria-pressed={hidden} onClick={togglePrivacy}>{hidden ? <EyeOff /> : <Eye />}</Button>
-            <Button variant="ghost" size="icon" aria-label="Verrouiller" onClick={lock}><Lock /></Button>
+            <Button variant="ghost" size="icon-sm" aria-label={last ? `Annuler : ${last.label}` : 'Rien à annuler'} title={last ? `Annuler : ${last.label} (⌘Z)` : undefined} disabled={!last} onClick={doUndo}><Undo2 /></Button>
+            <Button variant="ghost" size="icon-sm" aria-label={hidden ? 'Afficher les montants' : 'Masquer les montants'} aria-pressed={hidden} onClick={togglePrivacy}>{hidden ? <EyeOff /> : <Eye />}</Button>
+            <Button variant="ghost" size="icon-sm" aria-label="Verrouiller" onClick={lock}><Lock /></Button>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-4">
+      <main className="mx-auto max-w-5xl px-5 py-10">
         <Suspense fallback={<p className="text-sm text-muted-foreground">Chargement…</p>}><Page key={String(hidden)} /></Suspense>
         <Tutorial />
       </main>
-      <nav aria-label="Navigation mobile" className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t bg-background lg:hidden">
+      <nav aria-label="Navigation mobile" className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-border/60 bg-background/80 backdrop-blur-xl lg:hidden">
         {entries.filter(([, [, , g]]) => g === 'main').map(([k, [label]]) => (
           <a key={k} href={`#/${k}`} aria-current={route === k ? 'page' : undefined} className={cn('py-3 text-center text-xs', route === k ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{label}</a>
         ))}

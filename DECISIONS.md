@@ -260,3 +260,17 @@ Pour un compte dont le solde a été saisi à une date :
 - **Prévisions** : le solde des comptes courants avant chaque paie sur 6 périodes. Un clic ouvre le budget de cette période (`#/budget?m=…`).
 - **Alertes de budget** : pas d'alerte quand une ligne est payée pile au prévu, seulement en cas de dépassement. L'accueil ne montre que le dépassement, le salaire pas reçu et les doublons. Le découvert y est déjà visible en rouge.
 - **Listes** : « À payer » et les postes de budget terminés sont masqués quand il n'y a rien à faire.
+
+## D50. Structure comptable, esthétique apple.com
+- **Budget** : tableau comptable par période, avec les colonnes Libellé / Date / Prévu / Réalisé / Écart / Pointé et trois sections sous-totalisées (Revenus, Charges fixes, Dépenses variables). La dernière ligne donne le « Résultat de la période ».
+  - Une ligne par échéance datée, comme une écriture.
+  - Écart favorable en vert : plus reçu, ou moins dépensé, que prévu.
+  - « Pointé » joue le rôle du rapprochement bancaire.
+- **Journal** (ex-Opérations) : colonnes Débit / Crédit, et un solde progressif quand on regarde un seul compte sans autre filtre.
+- **Navigation** : Aperçu, Budget, Journal, Comptes ; le reste dans « Plus ».
+- **Esthétique** :
+  - police système Apple (SF Pro) à la place de Geist ;
+  - palette d'apple.com : fond #fbfbfd, encre #1d1d1f, gris #6e6e73, tuiles #f5f5f7, accent unique #0071e3 (#2997ff en sombre), noir pur en sombre ;
+  - boutons et onglets en pilule ;
+  - barre de navigation de 48 px, translucide et floutée ;
+  - grands titres serrés ; tableaux à filets fins sans cadre.
