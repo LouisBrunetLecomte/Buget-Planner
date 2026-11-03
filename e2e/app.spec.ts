@@ -4,14 +4,15 @@ import AxeBuilder from '@axe-core/playwright'
 const PW = 'mot-de-passe-e2e'
 
 async function createVault(page: Page, demo = true) {
-  await page.goto('/')
+  await page.goto(demo ? '/?demo' : '/')
   await page.getByLabel('Mot de passe', { exact: true }).fill(PW)
   await page.getByLabel('Confirmation').fill(PW)
-  if (!demo) await page.getByRole('checkbox', { name: /démonstration/ }).click()
+  if (demo) await page.getByRole('checkbox', { name: /démonstration/ }).click()
   await page.getByRole('button', { name: 'Créer ma base' }).click()
-  await expect(page.getByRole('heading', { name: 'Accueil' })).toBeVisible({ timeout: 20_000 })
+  // base vierge : le tutoriel s'ouvre par-dessus l'accueil
+  await expect(demo ? page.getByRole('heading', { name: 'Accueil' }) : page.getByRole('dialog').getByText('Bienvenue dans Buget')).toBeVisible({ timeout: 20_000 })
 }
-const nav = (page: Page, route: string) => page.goto(`/#/${route}`)
+const nav = (page: Page, route: string) => page.evaluate((r) => { location.hash = `/${r}` }, route) // sans rechargement (sinon l'app se reverrouille)
 
 test('création, verrouillage, mauvais mot de passe, persistance', async ({ page }) => {
   await createVault(page)
@@ -56,6 +57,7 @@ test('budget : exception « ce mois seulement » puis annulation en un clic', as
   await nav(page, 'budget')
   await page.getByRole('button', { name: 'Alimentation', exact: true }).click()
   await page.getByLabel('Budget (€)').fill('900')
+  await page.getByRole('radio', { name: /seulement/ }).check()
   await page.getByLabel('Motif de l’exception').fill('Invités')
   await page.getByRole('button', { name: 'Enregistrer' }).click()
   await expect(page.getByText('Exception : Invités')).toBeVisible()
@@ -76,4 +78,49 @@ test('accessibilité (axe, WCAG AA) : aucune violation grave', async ({ page }) 
     const bad = r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
     expect(bad.map((v) => `${route}: ${v.id} (${v.nodes.length}) ${v.nodes[0]?.target.join(' ')}`)).toEqual([])
   }
+})
+
+test('base vierge : aucune donnée, tutoriel de première connexion', async ({ page }) => {
+  await createVault(page, false)
+  const dlg = page.getByRole('dialog')
+  await expect(dlg.getByText('Bienvenue dans Buget')).toBeVisible()
+  await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByLabel('Nom').fill('Mon compte LCL')
+  await dlg.getByLabel('Solde actuel (€)').fill('1 250')
+  await dlg.getByRole('button', { name: 'Ajouter ce compte' }).click()
+  await expect(dlg.getByText('✓ Mon compte LCL')).toBeVisible()
+  await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByLabel(/revenu net mensuel/).fill('2100')
+  await dlg.getByRole('button', { name: 'Enregistrer' }).click()
+  await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByRole('button', { name: 'C’est parti !' }).click()
+  await expect(dlg).toHaveCount(0)
+  await nav(page, 'operations')
+  await expect(page.getByText('Aucune opération')).toBeVisible() // vraiment vide
+  await nav(page, 'comptes')
+  await expect(page.getByText('Mon compte LCL').first()).toBeVisible()
+  await page.reload()
+  await page.getByLabel('Mot de passe').fill(PW)
+  await page.getByRole('button', { name: 'Déverrouiller' }).click()
+  await expect(page.getByRole('heading', { name: 'Accueil' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('dialog')).toHaveCount(0) // le tutoriel ne revient pas
+})
+
+test('budget : nouveaux libellés « tous les mois depuis », triés du plus gros au plus petit', async ({ page }) => {
+  await createVault(page, false)
+  await page.getByRole('button', { name: 'Passer le tutoriel' }).click()
+  await nav(page, 'budget')
+  const form = page.getByRole('form', { name: 'Nouvelle ligne de budget' })
+  for (const [l, a] of [['Coiffeur', '30'], ['Courses maison', '450'], ['Cadeaux', '80']]) {
+    await form.getByLabel('Nouveau libellé').fill(l!)
+    await form.getByLabel('Montant (€)').fill(a!)
+    await form.getByRole('button', { name: 'Ajouter' }).click()
+    await expect(page.getByRole('button', { name: l, exact: true })).toBeVisible()
+  }
+  const order = await page.locator('section:has(h2:has-text("Dépenses")) li button.text-left span.font-medium').allTextContents()
+  expect(order).toEqual(['Courses maison', 'Cadeaux', 'Coiffeur'])
+  await page.getByRole('button', { name: 'Mois suivant' }).click()
+  await expect(page.getByRole('button', { name: 'Coiffeur', exact: true })).toBeVisible() // valable les mois suivants
 })

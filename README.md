@@ -24,7 +24,7 @@ npm install        # copie aussi les fichiers de l'OCR dans public/ocr
 npm run dev        # http://localhost:5173
 ```
 
-Au premier lancement, choisis un mot de passe (8 caractères minimum). Coche « données de démonstration » pour essayer l'app avec 6 mois de données fictives.
+Au premier lancement, choisis un mot de passe (8 caractères minimum) : la base démarre **vide** et un **tutoriel** te guide (comptes, opérations, budget, charges fixes, sauvegarde). Il peut être revu dans Réglages → Apparence et aide. Pour essayer avec 6 mois de données fictives, ouvre l'app dans le navigateur avec `?demo` dans l'adresse (par exemple `http://localhost:5173/?demo`).
 
 ⚠️ **Le mot de passe est irrécupérable.** Télécharge régulièrement une sauvegarde (Réglages → Sauvegarde) ; l'accueil te le rappelle après 30 jours.
 
@@ -42,7 +42,7 @@ Au premier lancement, choisis un mot de passe (8 caractères minimum). Coche « 
 |---|---|
 | **Accueil** | Solde total, reste à vivre par jour, budget du mois, taux d'épargne, alertes, prochaines échéances, score de santé financière, faits marquants, premiers pas |
 | **Opérations** | Saisie rapide (touche `n`), recherche, filtres, actions en masse, ventilation, tags, notes, pièces jointes avec lecture du ticket (OCR) |
-| **Budget** | Budget sur 12 mois et plus, mode exception (« ce mois seulement / à partir de ce mois / tous les mois »), report, base zéro, 50/30/20, vue annuelle, projection |
+| **Budget** | Lignes par catégorie ou **libellé libre**, valables par défaut « tous les mois à partir de » un mois choisi ; exceptions pour un seul mois ; lignes triées de la plus grosse à la plus petite ; report, base zéro, 50/30/20, vue annuelle, projection |
 | **Récurrences** | Charges fixes, abonnements, revenus ; détection automatique, hausses de prix, prélèvements manquants, calendrier |
 | **Analyses** | Solde et prévision à 3, 6 ou 12 mois, revenus/dépenses, Sankey, répartition, comparaison avec l'année précédente |
 | **Patrimoine** | Objectifs d'épargne, règles d'arrondi et de pourcentage, crédits (amortissement, remboursement anticipé, boule de neige / avalanche), patrimoine net, placements |

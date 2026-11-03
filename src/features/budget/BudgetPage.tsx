@@ -10,7 +10,12 @@ import { projectBalances, resteAVivre, type MonthBudget, type Row } from '@/core
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
-import { CategorySelect, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { attempt, CategorySelect, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { parseAmount } from '@/core/money'
+import { createCategory } from '@/db/repo'
 import { cn } from '@/lib/utils'
 import { BudgetDialog, monthName } from './BudgetDialog'
 
@@ -92,13 +97,46 @@ function RowLine({ r, onEdit, month }: { r: Row; onEdit: () => void; month: stri
   )
 }
 
+/** Nouvelle ligne de budget avec son propre libellé (crée la catégorie si elle n'existe pas). */
+function NewLine({ month }: { month: string }) {
+  const { all } = useCategories()
+  const [label, setLabel] = useState(''), [kind, setKind] = useState<'depense' | 'revenu'>('depense'), [amount, setAmount] = useState(''), [from, setFrom] = useState(month)
+  function add() {
+    const name = label.trim(), cents = parseAmount(amount)
+    if (!name) return toast.error('Donne un libellé')
+    if (cents === null || cents <= 0) return toast.error('Montant invalide')
+    const ok = attempt(() => mutate((d) => {
+      const existing = all.find((c) => c.name.toLowerCase() === name.toLowerCase() && c.kind === kind)
+      const id = existing?.id ?? createCategory(d, { name, kind }).id
+      b.setBudget(d, id, from, cents, 'from')
+      return true
+    }, { label: `Budget : ${name}` }), `« ${name} » ajouté au budget à partir de ${monthName(from)}`)
+    if (ok) { setLabel(''); setAmount('') }
+  }
+  return (
+    <form aria-label="Nouvelle ligne de budget" className="grid gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_9rem_8rem_auto_auto] md:items-end" onSubmit={(e) => { e.preventDefault(); add() }}>
+      <div className="grid gap-1"><Label htmlFor="nl-l">Nouveau libellé</Label><Input id="nl-l" placeholder="ex : Cadeaux, Coiffeur, Prime…" value={label} onChange={(e) => setLabel(e.target.value)} /></div>
+      <div className="grid gap-1"><Label htmlFor="nl-k">Type</Label>
+        <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
+          <SelectTrigger id="nl-k" className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="depense">Dépense</SelectItem><SelectItem value="revenu">Revenu</SelectItem></SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-1"><Label htmlFor="nl-a">Montant (€)</Label><Input id="nl-a" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+      <div className="grid gap-1"><Label htmlFor="nl-f">Tous les mois depuis</Label><Input id="nl-f" type="month" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} /></div>
+      <Button type="submit">Ajouter</Button>
+    </form>
+  )
+}
+
 function MonthView({ month }: { month: string }) {
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const m = useMemo(() => b.getBudget(db, month, month)[0]!, [db, version, month])
   const [edit, setEdit] = useState<{ categoryId: string; row: Row | null } | null>(null)
   const isCurrent = month === monthOf(today())
-  const groups = (['revenu', 'depense'] as const).map((k) => ({ k, rows: m.rows.filter((r) => r.kind === k) }))
+  const size = (r: Row) => Math.max(r.planned + r.carry, r.actual)
+  const groups = (['revenu', 'depense'] as const).map((k) => ({ k, rows: m.rows.filter((r) => r.kind === k).sort((a, b) => size(b) - size(a)) }))
 
   function propose() {
     const s = b.suggestBudget(db, month)
@@ -128,8 +166,9 @@ function MonthView({ month }: { month: string }) {
         </section>
       ))}
       {m.unbudgetedExpense > 0 && <p className="mb-4 text-sm text-muted-foreground">Dépenses hors budget ce mois : <Money cents={m.unbudgetedExpense} colored={false} /> (catégories sans ligne de budget, ou non catégorisées).</p>}
-      <div className="flex max-w-sm items-center gap-2">
-        <CategorySelect value={null} allowNone={false} placeholder="Ajouter une catégorie au budget…" onChange={(c) => c && setEdit({ categoryId: c, row: m.rows.find((r) => r.categoryId === c) ?? null })} />
+      <NewLine key={month} month={month} />
+      <div className="mt-2 flex max-w-sm items-center gap-2">
+        <CategorySelect value={null} allowNone={false} placeholder="… ou ajouter une catégorie existante" onChange={(c) => c && setEdit({ categoryId: c, row: m.rows.find((r) => r.categoryId === c) ?? null })} />
       </div>
       {edit && <BudgetDialog {...edit} month={month} onClose={() => setEdit(null)} />}
     </>
@@ -146,7 +185,10 @@ function YearView({ month }: { month: string }) {
     return { months, projection: projectBalances(b.totalBalance(db), proj, cur) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version, year, cur])
-  const catIds = [...new Set(data.months.flatMap((m) => m.rows.map((r) => r.categoryId)))]
+  // dépenses puis revenus, chaque groupe trié du plus gros total annuel au plus petit
+  const totals = new Map<string, { kind: string; v: number }>()
+  for (const m of data.months) for (const r of m.rows) totals.set(r.categoryId, { kind: r.kind, v: (totals.get(r.categoryId)?.v ?? 0) + Math.max(r.planned, r.actual) })
+  const catIds = [...totals].sort(([, a], [, b2]) => (a.kind === b2.kind ? b2.v - a.v : a.kind === 'depense' ? -1 : 1)).map(([id]) => id)
   const rowOf = (m: MonthBudget, id: string) => m.rows.find((r) => r.categoryId === id)
   const past = (m: string) => m <= cur
   const firstNeg = data.projection.find((p) => p.balance < 0)

@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { LockScreen } from '@/app/LockScreen'
 import { useRoute } from '@/app/ui'
 import { useAlertNotifications } from '@/app/notify'
+import { Tutorial } from '@/app/Tutorial'
 import { TransactionsPage } from '@/features/transactions/TransactionsPage'
 import { HomePage } from '@/features/home/HomePage'
 import { BudgetPage } from '@/features/budget/BudgetPage'
@@ -93,6 +94,7 @@ function Shell() {
       </header>
       <main className="mx-auto max-w-6xl px-4 py-4">
         <Suspense fallback={<p className="text-sm text-muted-foreground">Chargement…</p>}><Page key={String(hidden)} /></Suspense>
+        <Tutorial />
       </main>
       <nav aria-label="Navigation mobile" className="fixed inset-x-0 bottom-0 z-20 flex overflow-x-auto border-t bg-background lg:hidden">
         {entries.map(([k, [label]]) => (

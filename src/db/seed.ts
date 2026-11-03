@@ -1,6 +1,6 @@
 import type { Db } from './client'
 import { seedDefaults } from './defaults'
-import { addTransaction, createAccount, linkTransfer, saveRates } from './repo'
+import { addTransaction, createAccount, linkTransfer, putSetting, saveRates } from './repo'
 import { createRecurring, setBudget, setCategoryOptions, suggestBudget } from './budgetRepo'
 import { addMonths } from '@/core/dates'
 import { paymentFor } from '@/core/debt'
@@ -90,5 +90,6 @@ export function seedDemo(db: Db, end = new Date()) {
   const av = createAsset(db, 'Assurance-vie', 'investissement', 1_500_000, `${addMonths(month, -11)}-01`)
   for (let k = 10; k >= 0; k--) setAssetValue(db, av.id, `${addMonths(month, -k)}-01`, 1_500_000 + (11 - k) * 18_000)
   saveScenario(db, { name: 'Perte d’emploi 3 mois', changes: [{ type: 'mensuel', label: 'Salaire remplacé par l’ARE', amount: -95_000, from: addMonths(month, 2), to: addMonths(month, 4) }] })
+  putSetting(db, 'tutorialDone', true) // la démo est déjà remplie : pas de tutoriel
   return { accounts: [courant, livret, revolut, usd] }
 }

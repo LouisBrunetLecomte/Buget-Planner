@@ -190,8 +190,9 @@ export function SettingsPage() {
         <TouchIdCard />
         <SecurityCard />
         <Card>
-          <CardHeader><CardTitle>Apparence</CardTitle></CardHeader>
-          <CardContent className="flex gap-2">
+          <CardHeader><CardTitle>Apparence et aide</CardTitle></CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => mutate((d) => putSetting(d, 'tutorialDone', false), { undoable: false })}>Revoir le tutoriel</Button>
             {(['light', 'dark', 'system'] as const).map((t) => <Button key={t} variant={theme === t ? 'default' : 'outline'} onClick={() => setTheme(t)}>{{ light: 'Clair', dark: 'Sombre', system: 'Système' }[t]}</Button>)}
           </CardContent>
         </Card>

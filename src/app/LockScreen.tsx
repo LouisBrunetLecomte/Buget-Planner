@@ -10,7 +10,9 @@ import { createVault, MIN_PASSWORD, restoreBackup, unlock } from './store'
 import { enrollIfPossible, hasTouchIdBridge, touchIdDisable, touchIdStatus, touchIdUnlock } from './macAuth'
 
 export function LockScreen({ mode }: { mode: 'new' | 'locked' }) {
-  const [pw, setPw] = useState(''), [pw2, setPw2] = useState(''), [demo, setDemo] = useState(true)
+  // démo réservée aux tests et à l'essai (?demo dans l'adresse) : une vraie base démarre vide
+  const demoAllowed = new URLSearchParams(location.search).has('demo')
+  const [pw, setPw] = useState(''), [pw2, setPw2] = useState(''), [demo, setDemo] = useState(false)
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null)
   // Mac avec Touch ID activé : l'empreinte est la porte d'entrée, le mot de passe un secours
   const [bio, setBio] = useState(false), [showPassword, setShowPassword] = useState(!hasTouchIdBridge)
@@ -79,9 +81,9 @@ export function LockScreen({ mode }: { mode: 'new' | 'locked' }) {
                   <Label htmlFor="pw2">Confirmation</Label>
                   <Input id="pw2" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} required />
                 </div>
-                <label className="flex items-center gap-2 text-sm">
+                {demoAllowed && <label className="flex items-center gap-2 text-sm">
                   <Checkbox checked={demo} onCheckedChange={(v) => setDemo(v === true)} /> Charger des données de démonstration
-                </label>
+                </label>}
               </>}
               <Button type="submit" disabled={busy} variant={bio ? 'outline' : 'default'}>{busy ? 'Un instant…' : mode === 'new' ? 'Créer ma base' : 'Déverrouiller'}</Button>
               <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>

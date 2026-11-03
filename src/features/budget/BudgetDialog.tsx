@@ -17,23 +17,25 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
   const { byId, label } = useCategories()
   const cat = byId.get(categoryId)!
   const [amount, setAmount] = useState(row ? (row.planned / 100).toFixed(2).replace('.', ',') : '')
-  const [scope, setScope] = useState<Scope>(row ? 'month' : 'from'), [reason, setReason] = useState(row?.exception?.reason ?? '')
+  // par défaut : « tous les mois à partir de » (mois réglable) ; l'exception d'un seul mois reste possible
+  const [scope, setScope] = useState<Scope>('from'), [reason, setReason] = useState(row?.exception?.reason ?? '')
+  const [fromMonth, setFromMonth] = useState(month)
   const [rollover, setRollover] = useState(cat.rollover), [bucket, setBucket] = useState(cat.bucket ?? 'none')
 
   function save() {
     const cents = parseAmount(amount)
     if (cents === null || cents < 0) return attempt(() => { throw new Error('Montant invalide') })
     const ok = attempt(() => mutate((d) => {
-      b.setBudget(d, categoryId, month, cents, scope, reason)
+      b.setBudget(d, categoryId, scope === 'from' ? fromMonth : month, cents, scope, reason)
       b.setCategoryOptions(d, categoryId, { rollover, bucket: bucket === 'none' ? null : bucket as 'besoin' | 'envie' })
       return true
     }, { label: `Budget : ${label(categoryId)}` }))
     if (ok) onClose()
   }
   const scopes: [Scope, string, string][] = [
-    ['month', 'Ce mois seulement', `Exception pour ${monthName(month)}, le modèle ne change pas.`],
-    ['from', 'À partir de ce mois', 'Les mois précédents gardent l’ancien montant.'],
-    ['all', 'Tous les mois', 'Remplace le montant partout, passé compris.'],
+    ['from', 'Tous les mois à partir de…', 'Les mois précédents gardent leur montant.'],
+    ['month', `${monthName(month)} seulement`, 'Une exception (vacances, cadeaux…) : le reste du budget ne change pas.'],
+    ['all', 'Tous les mois, passé compris', 'Remplace le montant partout.'],
   ]
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -49,7 +51,9 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
             {scopes.map(([v, t, d]) => (
               <label key={v} className="flex cursor-pointer gap-2 rounded-md border p-2 text-sm has-checked:border-primary">
                 <input type="radio" name="scope" value={v} checked={scope === v} onChange={() => setScope(v)} className="mt-0.5 accent-current" />
-                <span><span className="font-medium">{t}</span><span className="block text-xs text-muted-foreground">{d}</span></span>
+                <span className="grid gap-1"><span className="font-medium">{t}</span><span className="block text-xs text-muted-foreground">{d}</span>
+                  {v === 'from' && scope === 'from' && <Input type="month" aria-label="À partir du mois" className="h-8 w-44" value={fromMonth} onChange={(e) => e.target.value && setFromMonth(e.target.value)} />}
+                </span>
               </label>
             ))}
           </fieldset>

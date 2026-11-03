@@ -173,3 +173,18 @@ Un petit module remplace next-themes, dont le script en ligne était incompatibl
   - Touch ID se (ré)active automatiquement à la création de la base, au déverrouillage par mot de passe, au changement de mot de passe et à la restauration d'une sauvegarde.
   - Il est oublié lors de l'effacement total des données.
 - **Pont JavaScript ↔ Swift** : il n'accepte que les messages de la page principale servie par 127.0.0.1:47219.
+
+## D37. Démarrage à vide et tutoriel
+- **Base vide** : une nouvelle base ne contient que les catégories et règles par défaut, sans comptes, opérations ni budget. Les données de démonstration ne sont proposées qu'avec `?demo` dans l'adresse ; les tests de bout en bout s'en servent.
+- **Tutoriel** (5 étapes, chacune pouvant être passée) :
+  - les étapes « comptes » et « revenu mensuel » s'enregistrent pour de vrai ;
+  - le choix « importer » ou « saisir » emmène au bon écran à la fin ;
+  - il propose la première sauvegarde.
+- Le tutoriel est marqué comme vu dans la base (`tutorialDone`) et peut être revu depuis les Réglages.
+
+## D38. Budget : libellés, portée par défaut, tri
+- **Libellés** : un nouveau libellé crée une catégorie principale du même nom, ou réutilise celle qui existe déjà avec ce nom et ce type. Il reste donc utilisable pour catégoriser les opérations.
+- **Portée par défaut** : « tous les mois à partir de [mois] », mois réglable. L'exception d'un seul mois et le « tous les mois, passé compris » restent proposés.
+- **Tri** :
+  - vue mois : du plus grand de (prévu + report, réel) au plus petit, revenus et dépenses séparément ;
+  - vue année : du plus gros total annuel au plus petit.
