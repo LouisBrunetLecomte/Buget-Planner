@@ -80,6 +80,12 @@ function Health() {
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const h = useMemo(() => an.health(db, today()), [db, version])
+  if (!h.enough) return (
+    <Card>
+      <CardHeader><CardDescription>Score de santé financière</CardDescription><CardTitle className="text-xl">Bientôt</CardTitle>
+        <CardDescription className="text-xs">Il sera calculé après ta première période complète (de paie à paie) avec un revenu reçu : coche ton salaire quand il arrive.</CardDescription></CardHeader>
+    </Card>
+  )
   return (
     <Card>
       <CardHeader><CardDescription>Score de santé financière</CardDescription><CardTitle className="text-3xl">{h.score}<span className="text-base font-normal text-muted-foreground"> / 100</span></CardTitle></CardHeader>
@@ -109,9 +115,9 @@ function Onboarding() {
     return {
       steps: [
         ['Créer tes comptes', has('select count(*) from account'), '#/comptes'],
-        ['Importer un premier relevé', has('select count(*) from import_batch') || has('select count(*) > 20 from "transaction"'), '#/import'],
-        ['Suivre tes charges fixes et revenus', has('select count(*) from recurring'), '#/recurrences'],
-        ['Créer ton budget', has('select count(*) from budget_line'), '#/budget'],
+        ['Ajouter ton salaire et tes charges avec leur date', has('select count(*) from recurring'), '#/recurrences'],
+        ['Créer ton budget (courses, sorties…)', has('select count(*) from budget_line') || has('select count(*) from recurring where category_id is not null and kind = \'charge\''), '#/budget'],
+        ['Cocher un premier paiement, ou importer un relevé', has('select count(*) from "transaction"'), '#/budget'],
         ['Télécharger une sauvegarde chiffrée', !!lastBackup, '#/reglages'],
       ] as [string, boolean, string][],
       stale: !lastBackup || daysBetween(lastBackup, today()) > 30, lastBackup,
@@ -160,7 +166,8 @@ export function HomePage() {
   const k = useMemo(() => {
     const cur = b.currentPeriod(db, today())
     const m = b.getBudget(db, cur, cur)[0]!
-    return { total: b.totalBalance(db), m, rate: an.health(db, today()).rate }
+    const h = an.health(db, today())
+    return { total: b.totalBalance(db), m, rate: h.rate, enough: h.enough }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version])
   if (!accounts.length) return <><PageHeader title="Accueil" /><Empty>Bienvenue ! Commence par <a className="underline" href="#/comptes">créer un compte</a>, puis <a className="underline" href="#/import">importe un relevé</a>.</Empty></>
@@ -169,9 +176,9 @@ export function HomePage() {
     <>
       <PageHeader title="Accueil" />
       <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <Card size="sm" className="col-span-2 lg:col-span-1"><CardHeader><CardDescription>Solde total</CardDescription><CardTitle className="text-3xl font-semibold"><Money cents={k.total} colored={false} /></CardTitle><CardDescription className="text-xs">{accounts.filter((a) => !a.archived).length} comptes actifs</CardDescription></CardHeader></Card>
+        <Card size="sm" className="col-span-2 lg:col-span-1"><CardHeader><CardDescription>Solde total (tous comptes)</CardDescription><CardTitle className="text-3xl font-semibold"><Money cents={k.total} colored={false} /></CardTitle><CardDescription className="text-xs">{((n) => `${n} compte${n > 1 ? 's' : ''} actif${n > 1 ? 's' : ''}`)(accounts.filter((a) => !a.archived).length)}</CardDescription></CardHeader></Card>
         <div className="col-span-2 lg:col-span-1"><ResteAVivre /></div>
-        <Card size="sm"><CardHeader><CardDescription>Budget du mois</CardDescription>
+        <Card size="sm"><CardHeader><CardDescription>Dépensé sur la période</CardDescription>
           <CardTitle className="text-xl"><Money cents={k.m.actualExpense} colored={false} /></CardTitle>
           {k.m.plannedExpense > 0 ? <>
             <div className="h-1.5 rounded-full bg-muted" role="meter" aria-valuenow={Math.round(spentPct * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Budget consommé">
@@ -180,7 +187,7 @@ export function HomePage() {
             <CardDescription className="text-xs">sur {formatMoney(k.m.plannedExpense)} prévus</CardDescription>
           </> : <CardDescription className="text-xs"><a className="underline" href="#/budget">Créer un budget</a></CardDescription>}
         </CardHeader></Card>
-        <Card size="sm"><CardHeader><CardDescription>Taux d’épargne</CardDescription><CardTitle className="text-xl">{Math.round(k.rate * 100)} %</CardTitle><CardDescription className="text-xs">3 derniers mois complets</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardDescription>Taux d’épargne</CardDescription><CardTitle className="text-xl">{k.enough ? `${Math.round(k.rate * 100)} %` : '—'}</CardTitle><CardDescription className="text-xs">{k.enough ? '3 dernières périodes complètes' : 'après ta première paie complète'}</CardDescription></CardHeader></Card>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <Onboarding />

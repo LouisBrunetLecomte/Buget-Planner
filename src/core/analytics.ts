@@ -109,7 +109,7 @@ export interface AlertInput {
   resteAVivre: number
   liquidProjection: { month: string; balance: number }[]
   upcoming: { name: string; date: string; amount: number }[]   // échéances non réglées à venir
-  missedIncome: { name: string; date: string; amount: number }[]
+  missedIncome: { name: string; date: string; amount: number; imported?: boolean }[]
   anomalies: Anomaly[]
 }
 
@@ -138,7 +138,7 @@ export function computeAlerts(i: AlertInput, s: AlertSettings): Alert[] {
     out.push({ id: `echeance:${u.name}:${u.date}`, type: 'echeance', severity: 'info', title: `${u.name} : ${eur(u.amount)}`, body: `Prélèvement prévu ${u.date === i.today ? 'aujourd’hui' : `le ${dayFr(u.date)}`}.`, href: '#/recurrences' })
   }
   if (s.enabled.revenu) for (const m of i.missedIncome)
-    out.push({ id: `revenu:${m.name}:${m.date}`, type: 'revenu', severity: 'attention', title: `${m.name} non reçu`, body: `Attendu le ${dayFr(m.date)} (${eur(m.amount)}), pas retrouvé dans tes opérations.`, href: '#/recurrences' })
+    out.push({ id: `revenu:${m.name}:${m.date}`, type: 'revenu', severity: 'attention', title: `${m.name} pas encore reçu`, body: m.imported ? `Attendu le ${dayFr(m.date)} (${eur(m.amount)}), pas retrouvé dans tes opérations.` : `Attendu le ${dayFr(m.date)} (${eur(m.amount)}). Reçu ? Coche-le dans « À payer / à recevoir ».`, href: '#/accueil' })
   if (s.enabled.anomalie) for (const a of i.anomalies) {
     if (a.kind === 'doublon') out.push({ id: a.id, type: 'anomalie', severity: 'attention', title: 'Doublon probable', body: `« ${a.txs[0].label} » saisi à la main et « ${a.txs[1].label} » importé : ${eur(a.txs[0].amountEur)}.`, href: '#/operations' })
     else if (a.kind === 'inhabituel') out.push({ id: a.id, type: 'anomalie', severity: 'info', title: 'Montant inhabituel', body: `${a.tx.label} : ${eur(a.tx.amountEur)} au lieu de ${eur(a.usual)} d’habitude.`, href: '#/operations' })

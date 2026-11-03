@@ -2,10 +2,10 @@ import { eq, gte, inArray, lte, and, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { account, transaction } from './schema'
 import { balances, cachedRates, effectiveOpenings, getSetting, listCategories, putSetting } from './repo'
-import { actualsBetween, currentPeriod, getBudget, periodBounds, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
+import { actualsBetween, currentPeriod, getBudget, resteAVivreFor, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
 import { addDays, addMonths } from '@/core/dates'
 import { rateOn } from '@/core/fx'
-import { projectBalances, resteAVivre } from '@/core/budget'
+import { projectBalances } from '@/core/budget'
 import { computeAlerts, dailyBalances, DEFAULT_ALERTS, findAnomalies, healthScore, monthEnds, savingsRate, type Alert, type AlertSettings } from '@/core/analytics'
 
 const LIQUID = ['courant', 'carte', 'especes'] as const
@@ -111,6 +111,7 @@ export function health(db: Db, today: string) {
   const negativeDays = balanceHistory(db, addDays(today, -89), today, true).filter((p) => p.balance < 0).length
   const fees = findAnomaliesFor(db, today).find((a) => a.kind === 'frais')
   return {
+    enough: last3.some((m) => m.actualIncome > 0), // au moins une période complète avec un revenu reçu
     rate: savingsRate(last3),
     ...healthScore({
       savingsRate: savingsRate(last3), monthsOfReserve: avgExp > 0 ? reserveBal / avgExp : 0,
@@ -133,16 +134,15 @@ export const alertSettings = (db: Db): AlertSettings => {
 export const saveAlertSettings = (db: Db, s: AlertSettings) => putSetting(db, 'alertSettings', s)
 
 export function alerts(db: Db, today: string): Alert[] {
-  const s = alertSettings(db), cur = currentPeriod(db, today), { start, end } = periodBounds(db, cur)
+  const s = alertSettings(db), cur = currentPeriod(db, today)
   const cats = listCategories(db), catLabel = (id: string) => cats.find((c) => c.id === id)?.name ?? '?'
   const month = getBudget(db, cur, cur)[0] ?? null
-  const upcomingAll = occurrencesBetween(db, start, end).filter((o) => !o.paid)
   const soon = occurrencesBetween(db, today, addDays(today, s.daysBefore)).filter((o) => !o.paid)
-  const missedIncome = recurringStatus(db, today).filter((x) => x.r.kind === 'revenu').flatMap((x) => x.missed.map((d) => ({ name: x.r.name, date: d, amount: x.r.amount })))
+  const missedIncome = recurringStatus(db, today).filter((x) => x.r.kind === 'revenu').flatMap((x) => x.missed.map((d) => ({ name: x.r.name, date: d, amount: x.r.amount, imported: !!x.r.pattern })))
   const dismissed = new Set(getSetting<string[]>(db, 'dismissedAlerts') ?? [])
   return computeAlerts({
     today, period: cur, month: month && month.rows.length ? month : null, catLabel,
-    liquid: liquidBalance(db), resteAVivre: resteAVivre(liquidBalance(db), upcomingAll.map((o) => o.recurring.amount), today, end).amount,
+    liquid: liquidBalance(db), resteAVivre: resteAVivreFor(db, today).amount,
     liquidProjection: liquidProjection(db, today),
     upcoming: soon.map((o) => ({ name: o.recurring.name, date: o.date, amount: o.recurring.amount })),
     missedIncome, anomalies: findAnomaliesFor(db, today),

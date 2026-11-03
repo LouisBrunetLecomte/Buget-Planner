@@ -153,7 +153,7 @@ test('salaire le 12 : le budget va du 12 au 11 du mois suivant', async ({ page }
   await dlg.getByRole('button', { name: 'Enregistrer' }).first().click()
   await dlg.getByRole('button', { name: 'Passer le tutoriel' }).click()
   await nav(page, 'budget')
-  await expect(page.getByText(/^12 \S+ → 11 \S+ \d{4}$/)).toBeVisible()
+  await expect(page.getByText(/^12 \S+ → 11 \S+ \d{4}$/).first()).toBeVisible()
   await expect(page.getByText(/Reste à vivre jusqu’à ta prochaine paie/)).toBeVisible()
 })
 

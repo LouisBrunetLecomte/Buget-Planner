@@ -34,7 +34,7 @@ it('soldes journaliers et fins de mois', () => {
 })
 
 const mb = (month: string, income: number, expense: number, rows: { categoryId: string; actual: number; planned?: number }[] = []): MonthBudget => ({
-  month, rows: rows.map((r) => ({ categoryId: r.categoryId, kind: 'depense', source: 'ligne' as const, items: [], overridden: null, base: r.planned ?? 0, exception: null, planned: r.planned ?? 0, carry: 0, actual: r.actual, remaining: (r.planned ?? 0) - r.actual })),
+  month, rows: rows.map((r) => ({ categoryId: r.categoryId, kind: 'depense', source: 'ligne' as const, items: [], overridden: null, base: r.planned ?? 0, exception: null, planned: r.planned ?? 0, carry: 0, actual: r.actual, remaining: (r.planned ?? 0) - r.actual, toCome: Math.max(0, (r.planned ?? 0) - r.actual) })),
   unbudgetedExpense: 0, unbudgetedIncome: 0, plannedIncome: 0, plannedExpense: 0, actualIncome: income, actualExpense: expense, toAssign: 0,
   buckets: { besoin: { planned: 0, actual: 0 }, envie: { planned: 0, actual: 0 } },
 })

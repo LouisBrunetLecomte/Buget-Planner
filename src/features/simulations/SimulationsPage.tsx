@@ -156,7 +156,7 @@ function DayByDay() {
   return (
     <Card>
       <CardHeader><CardTitle>Calendrier financier : 60 prochains jours</CardTitle>
-        <CardDescription>Comptes courants. Échéances suivies + dépenses courantes estimées à {formatMoney(c.dailyVariable)} par jour (moyenne des 3 derniers mois, hors charges fixes).</CardDescription></CardHeader>
+        <CardDescription>Comptes courants. Échéances datées + dépenses courantes estimées à {formatMoney(c.dailyVariable)} par jour (ton budget pas encore dépensé, réparti jusqu’à la prochaine paie ; à défaut, ta moyenne passée).</CardDescription></CardHeader>
       <CardContent>
         {firstNeg && <p role="alert" className="mb-2 text-sm text-destructive">⚠ Solde négatif probable à partir du {fmt(firstNeg.date)}.</p>}
         <div className="h-56">

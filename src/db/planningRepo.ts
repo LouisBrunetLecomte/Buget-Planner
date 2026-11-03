@@ -2,7 +2,7 @@ import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { asset, assetValue, debt, goal, goalContribution, recurring, savingsRule, scenario, transaction } from './schema'
 import { balances, listAccounts, listCategories } from './repo'
-import { currentPeriod, getBudget, occurrencesBetween, listRecurring, liquidBalance, periodBounds, totalBalance } from './budgetRepo'
+import { currentPeriod, getBudget, resteAVivreFor, occurrencesBetween, listRecurring, liquidBalance, periodBounds, totalBalance } from './budgetRepo'
 import { balanceHistory } from './analyticsRepo'
 import { addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
 import { amortize, balanceAt, type Loan } from '@/core/debt'
@@ -120,7 +120,9 @@ export function scenarioBase(db: Db, today: string, months: number) {
   const plan = getBudget(db, cur, addMonths(cur, months - 1))
   const hist = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
   const avgNet = Math.round(hist.reduce((s, m) => s + m.actualIncome - m.actualExpense, 0) / Math.max(1, hist.length))
-  const base = plan.map((m) => ({ month: m.month, net: m.rows.length ? m.plannedIncome - m.plannedExpense : avgNet }))
+  // période en cours : seulement ce qui reste à recevoir / à payer (le déjà payé est dans le solde de départ)
+  const toCome = (m: (typeof plan)[number]) => m.rows.reduce((t, r) => t + (r.kind === 'revenu' ? r.toCome : -r.toCome), 0)
+  const base = plan.map((m) => ({ month: m.month, net: m.month === cur ? toCome(m) : m.rows.length ? m.plannedIncome - m.plannedExpense : avgNet }))
   return { start: liquidBalance(db), base }
 }
 export const runScenario = (db: Db, today: string, months: number, changes: Change[]) => {
@@ -135,7 +137,8 @@ export function financialCalendar(db: Db, today: string, days = 60) {
   const hist = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
   const avgExpense = hist.reduce((s, m) => s + m.actualExpense, 0) / Math.max(1, hist.length)
   const fixed = -listRecurring(db).filter((r) => r.active && r.amount < 0).reduce((s, r) => s + monthlyEquivalent(r, r.amount), 0)
-  const dailyVariable = Math.max(0, Math.round((avgExpense - fixed) / 30.44))
+  const rav = resteAVivreFor(db, today)
+  const dailyVariable = rav.envelopes > 0 ? Math.round(rav.envelopes / rav.daysLeft) : Math.max(0, Math.round((avgExpense - fixed) / 30.44))
   const to = new Date(Date.parse(today) + (days - 1) * 86_400_000).toISOString().slice(0, 10)
   const events = occurrencesBetween(db, today, to).filter((o) => !o.paid).map((o) => ({ date: o.date, label: o.recurring.name, amount: o.recurring.amount }))
   return { dailyVariable, days: dailyForecast(liquidBalance(db), today, days, events, dailyVariable) }

@@ -7,7 +7,7 @@ import { addDays, addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dat
 import { periodEnd, periodLabel, periodOf, periodStart } from '@/core/period'
 import { rateOn } from '@/core/fx'
 import { detectRecurring, matchOccurrences, monthlyEquivalent, occurrences, priceIncrease, type MatchTx, type Suggestion } from '@/core/recurring'
-import { applyScope, computeBudget, type Actuals, type PlannedItem, type RecurringPlan, type Scope } from '@/core/budget'
+import { applyScope, computeBudget, resteAVivre, type Actuals, type PlannedItem, type RecurringPlan, type Scope } from '@/core/budget'
 
 export type Recurring = typeof recurring.$inferSelect
 const now = sql`(datetime('now'))`
@@ -43,16 +43,43 @@ export function updateRecurringFrom(db: Db, id: string, fromMonth: string, patch
 
 /** Échéances datées de chaque mois, rangées par catégorie : elles alimentent directement le budget. */
 export function recurringPlan(db: Db, from: string, to: string): RecurringPlan {
-  const plan: RecurringPlan = new Map(), day = periodDay(db)
+  const plan: RecurringPlan = new Map(), day = periodDay(db), refs = pointed(db)
   for (const r of listRecurring(db).filter((x) => x.active && x.categoryId)) {
-    for (const date of occurrences(r, periodStart(from, day), periodEnd(to, day))) {
+    const dates = occurrences(r, periodStart(from, day), periodEnd(to, day))
+    const paid = paidFor(db, r, dates, refs)
+    for (const date of dates) {
       const k = periodOf(date, day)
       const m = plan.get(k) ?? new Map<string, PlannedItem[]>()
-      m.set(r.categoryId!, [...(m.get(r.categoryId!) ?? []), { id: r.id, name: r.name, date, amount: r.amount }])
+      m.set(r.categoryId!, [...(m.get(r.categoryId!) ?? []), { id: r.id, name: r.name, date, amount: r.amount, paid: paid.has(date) }])
       plan.set(k, m)
     }
   }
   return plan
+}
+
+/**
+ * Reste à vivre de la période en cours, détaillé : solde des comptes courants + à recevoir − charges datées à payer
+ * − enveloppes pas encore dépensées − échéances hors budget (sans catégorie, virements d'épargne…).
+ */
+export function resteAVivreFor(db: Db, today: string) {
+  const cur = currentPeriod(db, today), { start, end } = periodBounds(db, cur)
+  const m = getBudget(db, cur, cur)[0]!
+  const cats = listCategories(db)
+  let incoming = 0, dated = 0, envelopes = 0
+  for (const r of m.rows) {
+    if (r.kind === 'revenu') incoming += r.toCome
+    else if (r.items.length && !r.exception) dated += r.toCome
+    else envelopes += r.toCome
+  }
+  // échéances qui ne passent pas par le budget : sans catégorie, ou vers l'épargne (catégorie de transfert)
+  let other = 0
+  for (const o of occurrencesBetween(db, start, end)) {
+    const c = cats.find((x) => x.id === o.recurring.categoryId)
+    if (!o.paid && (!c || c.kind === 'transfert')) other += o.recurring.amount
+  }
+  const liquid = liquidBalance(db)
+  const r = resteAVivre(liquid, incoming + Math.max(0, other), dated + envelopes + Math.max(0, -other), today, end)
+  return { ...r, liquid, incoming: incoming + Math.max(0, other), dated: dated + Math.max(0, -other), envelopes, end, day: periodDay(db), proratedFrom: m.proratedFrom ?? null }
 }
 
 /** Opérations qui correspondent à une récurrence : même motif, même sens, même compte si précisé. */
@@ -79,7 +106,12 @@ function paidFor(db: Db, r: Recurring, dates: string[], refs = pointed(db)): Map
   const out = new Map<string, MatchTx>()
   const used = new Set([...refs.values()].map((t) => t.id))
   const auto = matchOccurrences(dates.filter((d) => !refs.has(occurrenceRef(r.id, d))), matchingTxs(db, r).filter((t) => !used.has(t.id)), r)
-  for (const d of dates) { const t = refs.get(occurrenceRef(r.id, d)) ?? auto.get(d); if (t) out.set(d, t) }
+  // avant le premier jour d'utilisation (date du solde saisi), tout est déjà dans le solde : considéré comme réglé
+  const started = appStart(db)
+  for (const d of dates) {
+    const t = refs.get(occurrenceRef(r.id, d)) ?? auto.get(d) ?? (started && d < started ? { id: 'avant-buget', date: d, amountEur: 0 } : undefined)
+    if (t) out.set(d, t)
+  }
   return out
 }
 
@@ -127,7 +159,8 @@ export function tickLine(db: Db, categoryId: string, period: string, amount: num
   if (!cat) throw new Error('Catégorie introuvable')
   const acc = defaultAccount(db, null)
   const { start, end } = { start: periodStart(period, periodDay(db)), end: periodEnd(period, periodDay(db)) }
-  const date = today < start ? start : today > end ? end : today
+  if (start > today) throw new Error('Cette période n’a pas encore commencé.')
+  const date = today > end ? end : today
   const signed = cat.kind === 'revenu' ? Math.abs(amount) : -Math.abs(amount)
   db.insert(transaction).values({ accountId: acc.id, date, amount: signed, currency: 'EUR', amountEur: signed,
     label: cat.name, labelNorm: normalizeLabel(cat.name), categoryId, plannedRef: ref }).run()
@@ -145,7 +178,7 @@ function nextUnpaid(db: Db, r: Recurring, today: string): string | null {
 
 export interface RecurringStatus {
   r: Recurring; next: string | null; monthly: number; lastPaid: MatchTx | null
-  increase: ReturnType<typeof priceIncrease>; missed: string[] // échéances passées non retrouvées (30 derniers jours)
+  increase: ReturnType<typeof priceIncrease>; missed: string[] // échéances passées (30 derniers jours) ni cochées ni retrouvées dans les opérations
 }
 export function recurringStatus(db: Db, today: string): RecurringStatus[] {
   return listRecurring(db).map((r) => {
@@ -154,7 +187,7 @@ export function recurringStatus(db: Db, today: string): RecurringStatus[] {
     const paid = paidFor(db, r, past)
     return {
       r, next: nextUnpaid(db, r, today), monthly: monthlyEquivalent(r, r.amount),
-      lastPaid: txs.at(-1) ?? null, increase: priceIncrease(txs), missed: r.pattern && r.active ? past.filter((d) => !paid.has(d)) : [],
+      lastPaid: txs.at(-1) ?? null, increase: priceIncrease(txs), missed: r.active ? past.filter((d) => !paid.has(d)) : [], // passées, ni cochées ni retrouvées
     }
   })
 }
@@ -193,6 +226,12 @@ export function periodDay(db: Db): number {
   return s === 'auto' ? (salaryDay(db) ?? 1) : s
 }
 export const currentPeriod = (db: Db, today: string) => periodOf(today, periodDay(db))
+/** Début de l'utilisation : la plus ancienne date de solde saisie sur un compte. */
+export function appStart(db: Db): string | null {
+  const d = db.select({ d: sql<string | null>`min(${account.balanceDate})` }).from(account).get()?.d
+  return d ?? null
+}
+const daysBetweenIso = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000)
 export const periodBounds = (db: Db, key: string) => { const d = periodDay(db); return { start: periodStart(key, d), end: periodEnd(key, d), label: periodLabel(key, d), day: d } }
 
 // ---------- réel par période ----------
@@ -240,6 +279,18 @@ export function getBudget(db: Db, from: string, to: string) {
   const first = start < from ? start : from
   const cats = listCategories(db)
   const months = computeBudget(cats, db.select().from(budgetLine).all(), db.select().from(budgetException).all(), actualsBetween(db, first, to), first, to, recurringPlan(db, first, to))
+  // période où l'on a commencé l'app : les dépenses d'avant la saisie du solde y sont déjà ; l'enveloppe restante est
+  // comptée au prorata des jours qui restent (sinon « découvert probable » dès l'installation)
+  const startedOn = appStart(db)
+  if (startedOn) {
+    const day = periodDay(db), k = periodOf(startedOn, day), m = months.find((x) => x.month === k)
+    if (m) {
+      const s0 = periodStart(k, day), e0 = periodEnd(k, day)
+      const ratio = (daysBetweenIso(startedOn, e0) + 1) / (daysBetweenIso(s0, e0) + 1)
+      for (const r of m.rows) if (r.kind === 'depense' && !(r.items.length && !r.exception)) r.toCome = Math.max(0, Math.round((r.planned + r.carry) * ratio) - r.actual)
+      m.proratedFrom = startedOn
+    }
+  }
   return months.filter((m) => m.month >= from)
 }
 

@@ -229,3 +229,11 @@ Pour un compte dont le solde a été saisi à une date :
 - les opérations antérieures y sont déjà comprises ;
 - celles du jour venues d'un relevé importé aussi ;
 - celles saisies ou cochées le jour même, après coup, comptent.
+
+## D45. Reste à vivre, à recevoir et à payer
+- **Reste à vivre** = solde des comptes courants + à recevoir − charges datées à payer − budget pas encore dépensé (enveloppes) − échéances hors budget (épargne, sans catégorie). Le détail du calcul est affiché sous le chiffre.
+- **« À recevoir / à payer »** (`toCome`) se calcule ainsi : pour les échéances datées, ce qui n'est ni coché ni retrouvé (un salaire reçu à un montant différent est reçu) ; pour les enveloppes, le prévu moins le dépensé. Projection, simulations et alertes utilisent le même calcul.
+- **Période de démarrage** : les échéances antérieures au premier solde saisi sont considérées comme réglées, et les enveloppes sont comptées au prorata des jours restants.
+- **Revenu en retard** : un revenu non coché 3 jours après sa date déclenche une alerte, même sans import bancaire.
+- **Peu de données** : score de santé et taux d'épargne affichent « Bientôt » ou « — » tant qu'aucune période complète n'a de revenu.
+- **Période future** : ses lignes ne peuvent pas être cochées.

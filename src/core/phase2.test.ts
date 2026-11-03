@@ -111,7 +111,26 @@ describe('portées de modification', () => {
 })
 
 it('reste à vivre', () => {
-  expect(resteAVivre(50000, [-10000, 5000], '2026-11-21', '2026-11-30')).toEqual({ amount: 45000, daysLeft: 10, perDay: 4500 })
+  expect(resteAVivre(50000, 5000, 10000, '2026-11-21', '2026-11-30')).toEqual({ amount: 45000, daysLeft: 10, perDay: 4500 })
+})
+
+it('à recevoir / à payer : un revenu coché est reçu même si le montant diffère ; une enveloppe se vide au fil des dépenses', () => {
+  const cats: Cat[] = [
+    { id: 'sal', parentId: null, kind: 'revenu', rollover: false, bucket: null },
+    { id: 'loyer', parentId: null, kind: 'depense', rollover: false, bucket: null },
+    { id: 'courses', parentId: null, kind: 'depense', rollover: false, bucket: null },
+  ]
+  const plan = new Map([['2026-11', new Map([
+    ['sal', [{ id: 's', name: 'Salaire', date: '2026-11-12', amount: 210000, paid: true }]],
+    ['loyer', [{ id: 'l', name: 'Loyer', date: '2026-11-15', amount: -85000, paid: false }]],
+  ])]])
+  const actuals = new Map([['2026-11', new Map([['sal', 205000], ['courses', -12000]])]])
+  const [m] = computeBudget(cats, [{ categoryId: 'courses', amount: 40000, validFrom: '2026-01', validTo: null }], [], actuals, '2026-11', '2026-11', plan)
+  const r = (id: string) => m!.rows.find((x) => x.categoryId === id)!
+  expect(r('sal').toCome).toBe(0) // reçu (2 050 €) : plus rien d'attendu
+  expect(r('loyer').toCome).toBe(85000)
+  expect(r('courses').toCome).toBe(28000)
+  expect(projectBalances(100000, [m!], '2026-11')).toEqual([{ month: '2026-11', balance: 100000 - 85000 - 28000 }])
 })
 
 describe('échéances datées comme source du budget', () => {

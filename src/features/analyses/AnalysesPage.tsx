@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { axisEuro, axisProps, ChartTooltip, gridProps, LegendItem, monthShort, TableView } from '@/components/charts'
-import { addMonths, today } from '@/core/dates'
+import { today } from '@/core/dates'
 import { formatMoney } from '@/core/money'
 import * as an from '@/db/analyticsRepo'
 import { currentPeriod } from '@/db/budgetRepo'
@@ -180,7 +180,7 @@ function YearOverYear({ year }: { year: number }) {
 
 export function AnalysesPage() {
   const { db } = useDb()
-  const [month, setMonth] = useState(() => addMonths(currentPeriod(db, today()), -1))
+  const [month, setMonth] = useState(() => currentPeriod(db, today()))
   const [horizon, setHorizon] = useState(6)
   return (
     <>

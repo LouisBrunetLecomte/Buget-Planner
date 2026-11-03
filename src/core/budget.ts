@@ -7,7 +7,7 @@ export interface Cat { id: string; parentId: string | null; kind: 'depense' | 'r
 export type Actuals = Map<string, Map<string, number>>
 
 /** Échéances datées (charges fixes, revenus) par mois puis par catégorie : la source unique de ces montants. */
-export interface PlannedItem { id: string; name: string; date: string; amount: number }
+export interface PlannedItem { id: string; name: string; date: string; amount: number; paid?: boolean }
 export type RecurringPlan = Map<string, Map<string, PlannedItem[]>>
 
 export interface Row {
@@ -21,6 +21,7 @@ export interface Row {
   carry: number                // report des mois précédents (si activé)
   actual: number               // positif = dépensé (dépense) ou reçu (revenu)
   remaining: number            // planned + carry - actual
+  toCome: number               // ce qui reste vraiment à recevoir / à payer sur la période (≥ 0)
 }
 export interface MonthBudget {
   month: string; rows: Row[]
@@ -28,6 +29,7 @@ export interface MonthBudget {
   plannedIncome: number; plannedExpense: number; actualIncome: number; actualExpense: number
   toAssign: number             // base zéro : revenus prévus - dépenses prévues
   buckets: Record<'besoin' | 'envie', { planned: number; actual: number }>
+  proratedFrom?: string        // période de démarrage : enveloppes restantes au prorata depuis cette date
 }
 
 /** Ligne de modèle en vigueur pour un mois ; la plus récemment commencée gagne. */
@@ -59,7 +61,7 @@ export function computeBudget(cats: Cat[], lines: Line[], exceptions: Exception[
       if (base === null && !exception) continue
       const cy = c.rollover && c.kind === 'depense' ? (carry.get(c.id) ?? 0) : 0
       const planned = exception?.amount ?? base!
-      rows.set(c.id, { categoryId: c.id, kind: c.kind, source: items.length ? 'echeances' : 'ligne', items, overridden: items.length && line ? line.amount : null, base, exception, planned, carry: cy, actual: 0, remaining: 0 })
+      rows.set(c.id, { categoryId: c.id, kind: c.kind, source: items.length ? 'echeances' : 'ligne', items, overridden: items.length && line ? line.amount : null, base, exception, planned, carry: cy, actual: 0, remaining: 0, toCome: 0 })
     }
     let unbudgetedExpense = 0, unbudgetedIncome = 0
     for (const [catId, sum] of actuals.get(month) ?? []) {
@@ -75,6 +77,11 @@ export function computeBudget(cats: Cat[], lines: Line[], exceptions: Exception[
     const buckets = { besoin: { planned: 0, actual: 0 }, envie: { planned: 0, actual: 0 } }
     for (const r of list) {
       r.remaining = r.planned + r.carry - r.actual
+      // échéances datées : ce qui n'est pas encore coché/retrouvé (un salaire reçu à 2 050 € au lieu de 2 100 € est reçu, rien n'est plus attendu) ;
+      // enveloppes sans date (courses…) : ce qui n'a pas encore été dépensé
+      r.toCome = r.items.length && !r.exception
+        ? Math.abs(r.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0))
+        : Math.max(0, r.remaining)
       const c = byId.get(r.categoryId)!
       if (c.rollover && c.kind === 'depense') carry.set(c.id, r.remaining)
       const b = c.bucket ?? (c.parentId ? byId.get(c.parentId)?.bucket : null)
@@ -92,26 +99,28 @@ export function computeBudget(cats: Cat[], lines: Line[], exceptions: Exception[
 }
 
 /**
- * Solde projeté en fin de mois. Mois en cours : on ajoute seulement ce qui reste à recevoir / à dépenser.
- * Mois futurs : revenus prévus - dépenses prévues.
+ * Solde projeté en fin de période. Période en cours : on ajoute ce qui reste à recevoir et à payer (toCome).
+ * Périodes suivantes : revenus prévus - dépenses prévues.
  */
 export function projectBalances(balanceNow: number, months: MonthBudget[], currentMonth: string): { month: string; balance: number }[] {
   let bal = balanceNow
   const out: { month: string; balance: number }[] = []
   for (const m of months) {
     if (m.month < currentMonth) continue
-    if (m.month === currentMonth) {
-      for (const r of m.rows) bal += r.kind === 'revenu' ? Math.max(r.planned - r.actual, 0) : -Math.max(r.planned + r.carry - r.actual, 0)
-    } else bal += m.plannedIncome - m.plannedExpense
+    if (m.month === currentMonth) for (const r of m.rows) bal += r.kind === 'revenu' ? r.toCome : -r.toCome
+    else bal += m.plannedIncome - m.plannedExpense
     out.push({ month: m.month, balance: bal })
   }
   return out
 }
 
-/** Reste à vivre : solde disponible + revenus attendus - charges à venir d'ici la fin du mois, réparti par jour. */
-export function resteAVivre(liquid: number, upcoming: number[], today: string, monthEnd: string) {
-  const amount = liquid + upcoming.reduce((s, a) => s + a, 0)
-  const daysLeft = Math.max(1, Math.round((Date.parse(monthEnd) - Date.parse(today)) / 86_400_000) + 1)
+/**
+ * Reste à vivre : ce qu'il restera sur les comptes courants à la prochaine paie si le budget est suivi,
+ * réparti par jour. = solde + à recevoir − charges datées à payer − enveloppes pas encore dépensées.
+ */
+export function resteAVivre(liquid: number, incoming: number, outgoing: number, today: string, periodEnd: string) {
+  const amount = liquid + incoming - outgoing
+  const daysLeft = Math.max(1, Math.round((Date.parse(periodEnd) - Date.parse(today)) / 86_400_000) + 1)
   return { amount, daysLeft, perDay: Math.floor(amount / daysLeft) }
 }
 

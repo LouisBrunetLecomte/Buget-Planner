@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { addMonths, daysInMonth, monthsBetween, today } from '@/core/dates'
-import { projectBalances, resteAVivre, type MonthBudget, type Row } from '@/core/budget'
+import { projectBalances, type MonthBudget, type Row } from '@/core/budget'
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
@@ -32,19 +32,23 @@ function Bar({ value, max, income }: { value: number; max: number; income?: bool
 
 export function ResteAVivre() {
   const { db, version } = useDb()
-  const r = useMemo(() => {
-    const t = today(), { start, end } = b.periodBounds(db, b.currentPeriod(db, t))
-    // tout ce qui est prévu sur la période et pas encore coché (ou retrouvé), y compris en retard
-    const upcoming = b.occurrencesBetween(db, start, end).filter((o) => !o.paid).map((o) => o.recurring.amount)
-    return { ...resteAVivre(b.liquidBalance(db), upcoming, t, end), count: upcoming.length, day: b.periodDay(db) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, version])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const r = useMemo(() => b.resteAVivreFor(db, today()), [db, version])
+  const until = r.day > 1 ? 'ta prochaine paie' : 'la fin du mois'
+  const lines: [string, number][] = [['Sur tes comptes courants', r.liquid], ['À recevoir', r.incoming], ['Charges à payer', -r.dated], [r.proratedFrom ? `Budget pas encore dépensé (au prorata depuis le ${fmtDay(r.proratedFrom)}, ton premier jour)` : 'Budget pas encore dépensé', -r.envelopes]]
   return (
     <Card size="sm" className={cn(r.amount < 0 && 'border-destructive')}>
       <CardHeader>
-        <CardDescription>{r.day > 1 ? 'Reste à vivre jusqu’à ta prochaine paie' : 'Reste à vivre jusqu’à la fin du mois'}</CardDescription>
+        <CardDescription>Reste à vivre jusqu’à {until}</CardDescription>
         <CardTitle className="text-2xl"><Money cents={r.perDay} colored={false} /> <span className="text-sm font-normal text-muted-foreground">/ jour pendant {r.daysLeft} j</span></CardTitle>
-        <CardDescription className="text-xs">{formatMoney(r.amount)} = solde des comptes courants {r.count ? `après ${r.count} échéance(s) à venir` : ''}</CardDescription>
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">{formatMoney(r.amount)} libres d’ici {until}</summary>
+          <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 tabular-nums">
+            {lines.map(([l, v], i) => <Fragment key={l}><dt>{l}</dt><dd className="text-right">{v >= 0 && i > 0 ? '+' : ''}{formatMoney(v)}</dd></Fragment>)}
+            <dt className="border-t pt-0.5 font-medium text-foreground">Libre</dt><dd className="border-t pt-0.5 text-right font-medium text-foreground">{formatMoney(r.amount)}</dd>
+          </dl>
+          <p className="mt-1">Ce qu’il te restera si tu respectes ton budget. Coche ce qui est payé ou reçu pour qu’il se mette à jour.</p>
+        </details>
       </CardHeader>
     </Card>
   )
@@ -73,7 +77,7 @@ function Summary({ m }: { m: MonthBudget }) {
   )
 }
 
-type TickStatus = Map<string, { paid: boolean; ticked: boolean }>
+type TickStatus = Map<string, { paid: boolean; ticked: boolean; before: boolean }>
 const fmtDay = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 
 /** Case « payé / reçu » : cocher enregistre l'opération réelle, décocher l'efface. Tout l'app suit. */
@@ -86,7 +90,7 @@ function Tick({ checked, disabled, label, title, onChange }: { checked: boolean;
   )
 }
 
-function RowLine({ r, onEdit, month, status, lineTicked }: { r: Row; onEdit: () => void; month: string; status: TickStatus; lineTicked: boolean }) {
+function RowLine({ r, onEdit, month, status, lineTicked, future }: { r: Row; onEdit: () => void; month: string; status: TickStatus; lineTicked: boolean; future: boolean }) {
   const { label } = useCategories()
   const avail = r.planned + r.carry
   const verb = r.kind === 'revenu' ? 'reçu' : 'payé'
@@ -107,12 +111,12 @@ function RowLine({ r, onEdit, month, status, lineTicked }: { r: Row; onEdit: () 
             {r.items.map((i) => {
               const st = status.get(`${i.id}|${i.date}`)
               const byBank = !!st?.paid && !st.ticked
-              return <Tick key={i.id + i.date} checked={!!st?.paid} disabled={byBank} title={byBank ? 'Retrouvé dans tes opérations importées' : `Coche quand c’est ${verb}`}
+              return <Tick key={i.id + i.date} checked={!!st?.paid} disabled={byBank || (future && !st?.paid)} title={st?.before ? 'Avant ton premier jour dans Buget : déjà compris dans ton solde' : byBank ? 'Retrouvé dans tes opérations importées' : `Coche quand c’est ${verb}`}
                 label={`${i.name} ${formatMoney(Math.abs(i.amount))} le ${fmtDay(i.date)}`} onChange={(v) => tickItem(i.id, i.date, v, i.name)} />
             })}
           </div>
         ) : avail > 0 && (
-          <Tick checked={lineTicked} label={`${verb[0]!.toUpperCase()}${verb.slice(1)} (${formatMoney(avail)})`} title={`Coche quand c’est ${verb} : le montant prévu est enregistré`} onChange={tickLine} />
+          <Tick checked={lineTicked} disabled={future} label={`${verb[0]!.toUpperCase()}${verb.slice(1)} (${formatMoney(avail)})`} title={future ? 'Période à venir : tu pourras cocher le moment venu' : `Coche quand c’est ${verb} : le montant prévu est enregistré`} onChange={tickLine} />
         )}
         {r.overridden !== null && (
           <button type="button" className="block text-left text-xs text-muted-foreground underline" onClick={() => { if (confirm(`Supprimer l’ancien montant saisi (${formatMoney(r.overridden!)}) ? Tes échéances datées le remplacent déjà.`)) mutate((d) => b.removeLines(d, r.categoryId), { label: 'Ancien montant supprimé' }) }}>
@@ -131,7 +135,7 @@ function RowLine({ r, onEdit, month, status, lineTicked }: { r: Row; onEdit: () 
       <span className="hidden text-right text-sm tabular-nums md:block"><Money cents={r.actual} colored={false} /></span>
       <span className={cn('col-span-2 text-right text-sm tabular-nums md:col-span-1', r.kind === 'depense' && r.remaining < 0 && 'text-destructive font-medium')}>
         <Bar value={r.actual} max={avail} income={r.kind === 'revenu'} />
-        <span className="text-xs">{r.kind === 'revenu' ? (r.remaining > 0 ? `${formatMoney(r.remaining)} attendus` : 'reçu') : r.remaining >= 0 ? `reste ${formatMoney(r.remaining)}` : `dépassé de ${formatMoney(-r.remaining)}`}</span>
+        <span className="text-xs">{r.kind === 'revenu' ? (r.toCome > 0 ? `${formatMoney(r.toCome)} attendus` : r.actual ? 'reçu' : '—') : r.remaining >= 0 ? `reste ${formatMoney(r.remaining)}` : `dépassé de ${formatMoney(-r.remaining)}`}</span>
       </span>
     </li>
   )
@@ -140,6 +144,7 @@ function RowLine({ r, onEdit, month, status, lineTicked }: { r: Row; onEdit: () 
 /** Nouvelle ligne de budget avec son propre libellé (crée la catégorie si elle n'existe pas). */
 function NewLine({ month }: { month: string }) {
   const { all } = useCategories()
+  const { db } = useDb()
   const [label, setLabel] = useState(''), [kind, setKind] = useState<'depense' | 'revenu'>('depense'), [amount, setAmount] = useState(''), [from, setFrom] = useState(month)
   const [day, setDay] = useState<number | null>(null)
   function add() {
@@ -154,7 +159,7 @@ function NewLine({ month }: { month: string }) {
         startDate: `${from}-${String(Math.min(day, daysInMonth(from))).padStart(2, '0')}`, dayOfMonth: day, categoryId: id })
       else b.setBudget(d, id, from, cents, 'from')
       return true
-    }, { label: `Budget : ${name}` }), `« ${name} » ajouté au budget à partir de ${monthName(from)}`)
+    }, { label: `Budget : ${name}` }), `« ${name} » ajouté au budget à partir de la période ${b.periodBounds(db, from).label}`)
     if (ok) { setLabel(''); setAmount(''); setDay(null) }
   }
   return (
@@ -168,7 +173,8 @@ function NewLine({ month }: { month: string }) {
       </div>
       <div className="grid gap-1"><Label htmlFor="nl-a">Montant (€)</Label><Input id="nl-a" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
       <div className="grid gap-1"><Label htmlFor="nl-d">Date précise</Label><DaySelect id="nl-d" value={day} onChange={setDay} allowNone /></div>
-      <div className="grid gap-1"><Label htmlFor="nl-f">Tous les mois depuis</Label><Input id="nl-f" type="month" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} /></div>
+      <div className="grid gap-1"><Label htmlFor="nl-f">Toutes les périodes depuis</Label><Input id="nl-f" type="month" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} />
+        <span className="text-[11px] text-muted-foreground">{b.periodBounds(db, from).label}</span></div>
       <Button type="submit">Ajouter</Button>
     </form>
   )
@@ -181,8 +187,8 @@ function MonthView({ month }: { month: string }) {
   // état des cases : échéances payées/reçues (cochées ou retrouvées dans les opérations) et lignes cochées
   const ticks = useMemo(() => {
     const { start, end } = b.periodBounds(db, month)
-    const status: TickStatus = new Map(b.occurrencesBetween(db, start, end).map((o) => [`${o.recurring.id}|${o.date}`, { paid: !!o.paid, ticked: o.ticked }]))
-    return { status, lines: new Set([...b.pointed(db).keys()].filter((k) => k.startsWith('line:'))) }
+    const status: TickStatus = new Map(b.occurrencesBetween(db, start, end).map((o) => [`${o.recurring.id}|${o.date}`, { paid: !!o.paid, ticked: o.ticked, before: o.paid?.id === 'avant-buget' }]))
+    return { status, lines: new Set([...b.pointed(db).keys()].filter((k) => k.startsWith('line:'))), future: start > today() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version, month])
   const [edit, setEdit] = useState<{ categoryId: string; row: Row | null } | null>(null)
@@ -214,7 +220,7 @@ function MonthView({ month }: { month: string }) {
             <span>{g.k === 'revenu' ? 'Revenus' : 'Dépenses'}</span>
             <span className="hidden w-[27rem] grid-cols-3 text-right md:grid"><span>Prévu</span><span>Payé / reçu</span><span>Reste</span></span>
           </h2>
-          <ul className="rounded-lg border bg-card">{g.rows.map((r) => <RowLine key={r.categoryId} r={r} month={month} status={ticks.status} lineTicked={ticks.lines.has(b.lineRef(r.categoryId, month))} onEdit={() => setEdit({ categoryId: r.categoryId, row: r })} />)}</ul>
+          <ul className="rounded-lg border bg-card">{g.rows.map((r) => <RowLine key={r.categoryId} r={r} month={month} status={ticks.status} lineTicked={ticks.lines.has(b.lineRef(r.categoryId, month))} future={ticks.future} onEdit={() => setEdit({ categoryId: r.categoryId, row: r })} />)}</ul>
         </section>
       ))}
       {m.unbudgetedExpense > 0 && <p className="mb-4 text-sm text-muted-foreground">Dépenses hors budget ce mois : <Money cents={m.unbudgetedExpense} colored={false} /> (catégories sans ligne de budget, ou non catégorisées).</p>}

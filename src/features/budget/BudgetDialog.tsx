@@ -89,7 +89,7 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
               <label key={v} className="flex cursor-pointer gap-2 rounded-md border p-2 text-sm has-checked:border-primary">
                 <input type="radio" name="scope" value={v} checked={scope === v} onChange={() => setScope(v)} className="mt-0.5 accent-current" />
                 <span className="grid gap-1"><span className="font-medium">{t}</span><span className="block text-xs text-muted-foreground">{d}</span>
-                  {v === 'from' && scope === 'from' && <Input type="month" aria-label="À partir du mois" className="h-8 w-44" value={fromMonth} onChange={(e) => e.target.value && setFromMonth(e.target.value)} />}
+                  {v === 'from' && scope === 'from' && <span className="flex flex-wrap items-center gap-2"><Input type="month" aria-label="À partir de la période" className="h-8 w-44" value={fromMonth} onChange={(e) => e.target.value && setFromMonth(e.target.value)} /><span className="text-xs text-muted-foreground">{b.periodBounds(db, fromMonth).label}</span></span>}
                 </span>
               </label>
             ))}

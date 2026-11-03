@@ -55,7 +55,7 @@ function List({ st, edit }: { st: b.RecurringStatus[]; edit: (d: RecurringDraft)
               <div className="flex flex-wrap items-center gap-1.5 text-xs">
                 {increase && <Badge variant="outline" className="border-[var(--viz-critical)]">▲ Hausse : {formatMoney(increase.from)} → {formatMoney(increase.to)}</Badge>}
                 {increase && Math.abs(increase.to) !== Math.abs(r.amount) && <Button size="xs" variant="outline" onClick={() => mutate((d) => b.updateRecurring(d, r.id, { amount: increase.to }))}>Mettre à jour</Button>}
-                {missed.map((m) => <Badge key={m} variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-400">Non retrouvé le {fmtDay(m)}</Badge>)}
+                {missed.map((m) => <Badge key={m} variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-400">{r.pattern ? 'Non retrouvé' : 'Pas coché'} : {fmtDay(m)}</Badge>)}
                 {renewal && <Badge variant="secondary">Renouvellement {inDays(next)}</Badge>}
                 {next && r.active && (
                   <label className="flex items-center gap-1.5" title={`Coche quand c’est ${r.amount > 0 ? 'reçu' : 'payé'}`}>
