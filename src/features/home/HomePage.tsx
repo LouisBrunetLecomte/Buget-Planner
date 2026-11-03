@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { AlertTriangle, Info, OctagonAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { addDays, addMonths, daysBetween, monthOf, today } from '@/core/dates'
+import { addDays, addMonths, daysBetween, today } from '@/core/dates'
 import { insights, type Severity } from '@/core/analytics'
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
@@ -137,7 +137,7 @@ function Insights() {
   const { db, version } = useDb()
   const { label } = useCategories()
   const list = useMemo(() => {
-    const cur = monthOf(today())
+    const cur = b.currentPeriod(db, today())
     return insights(b.getBudget(db, addMonths(cur, -4), addMonths(cur, -1)), (id) => label(id) ?? '?')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version, label])
@@ -154,7 +154,7 @@ export function HomePage() {
   const { db, version } = useDb()
   const accounts = useAccounts()
   const k = useMemo(() => {
-    const cur = monthOf(today())
+    const cur = b.currentPeriod(db, today())
     const m = b.getBudget(db, cur, cur)[0]!
     return { total: b.totalBalance(db), m, rate: an.health(db, today()).rate }
     // eslint-disable-next-line react-hooks/exhaustive-deps

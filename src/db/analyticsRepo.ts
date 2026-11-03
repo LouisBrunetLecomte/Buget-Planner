@@ -2,8 +2,8 @@ import { eq, gte, inArray, lte, and, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { account, transaction } from './schema'
 import { balances, cachedRates, effectiveOpenings, getSetting, listCategories, putSetting } from './repo'
-import { actualsBetween, getBudget, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
-import { addDays, addMonths, endOfMonth, monthOf } from '@/core/dates'
+import { actualsBetween, currentPeriod, getBudget, periodBounds, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
+import { addDays, addMonths } from '@/core/dates'
 import { rateOn } from '@/core/fx'
 import { projectBalances, resteAVivre } from '@/core/budget'
 import { computeAlerts, dailyBalances, DEFAULT_ALERTS, findAnomalies, healthScore, monthEnds, savingsRate, type Alert, type AlertSettings } from '@/core/analytics'
@@ -38,7 +38,7 @@ export function balanceHistory(db: Db, from: string, to: string, liquidOnly = fa
 
 /** 12 fins de mois passées + projection budgétaire sur `horizon` mois (tous comptes). */
 export function balanceAndForecast(db: Db, today: string, horizon: number) {
-  const cur = monthOf(today)
+  const cur = currentPeriod(db, today)
   const hist = monthEnds(balanceHistory(db, `${addMonths(cur, -11)}-01`, today))
   const proj = projectBalances(totalBalance(db), getBudget(db, cur, addMonths(cur, horizon - 1)), cur)
   return { hist, proj }
@@ -46,7 +46,7 @@ export function balanceAndForecast(db: Db, today: string, horizon: number) {
 
 /** Projection des seuls comptes courants : sert à l'alerte de découvert. */
 export function liquidProjection(db: Db, today: string, horizon = 3) {
-  const cur = monthOf(today)
+  const cur = currentPeriod(db, today)
   return projectBalances(liquidBalance(db), getBudget(db, cur, addMonths(cur, horizon - 1)), cur)
 }
 
@@ -91,7 +91,7 @@ export function sankeyData(db: Db, month: string, maxOut = 7) {
 
 /** Revenus et dépenses réels des 12 derniers mois. */
 export const monthlyTotals = (db: Db, today: string, n = 12) =>
-  getBudget(db, addMonths(monthOf(today), -(n - 1)), monthOf(today)).map((m) => ({ month: m.month, income: m.actualIncome, expense: m.actualExpense }))
+  getBudget(db, addMonths(currentPeriod(db, today), -(n - 1)), currentPeriod(db, today)).map((m) => ({ month: m.month, income: m.actualIncome, expense: m.actualExpense }))
 
 /** Dépenses mensuelles de l'année et de la précédente. */
 export function yearOverYear(db: Db, year: number) {
@@ -101,7 +101,7 @@ export function yearOverYear(db: Db, year: number) {
 
 // ---------- santé ----------
 export function health(db: Db, today: string) {
-  const cur = monthOf(today)
+  const cur = currentPeriod(db, today)
   const last3 = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
   const avgExp = last3.reduce((s, m) => s + m.actualExpense, 0) / Math.max(1, last3.length)
   const reserve = accountsIn(db, false).filter((a) => a.type === 'epargne')
@@ -133,16 +133,16 @@ export const alertSettings = (db: Db): AlertSettings => {
 export const saveAlertSettings = (db: Db, s: AlertSettings) => putSetting(db, 'alertSettings', s)
 
 export function alerts(db: Db, today: string): Alert[] {
-  const s = alertSettings(db), cur = monthOf(today)
+  const s = alertSettings(db), cur = currentPeriod(db, today), end = periodBounds(db, cur).end
   const cats = listCategories(db), catLabel = (id: string) => cats.find((c) => c.id === id)?.name ?? '?'
   const month = getBudget(db, cur, cur)[0] ?? null
-  const upcomingAll = occurrencesBetween(db, today, endOfMonth(cur)).filter((o) => !o.paid)
+  const upcomingAll = occurrencesBetween(db, today, end).filter((o) => !o.paid)
   const soon = occurrencesBetween(db, today, addDays(today, s.daysBefore)).filter((o) => !o.paid)
   const missedIncome = recurringStatus(db, today).filter((x) => x.r.kind === 'revenu').flatMap((x) => x.missed.map((d) => ({ name: x.r.name, date: d, amount: x.r.amount })))
   const dismissed = new Set(getSetting<string[]>(db, 'dismissedAlerts') ?? [])
   return computeAlerts({
-    today, month: month && month.rows.length ? month : null, catLabel,
-    liquid: liquidBalance(db), resteAVivre: resteAVivre(liquidBalance(db), upcomingAll.map((o) => o.recurring.amount), today, endOfMonth(cur)).amount,
+    today, period: cur, month: month && month.rows.length ? month : null, catLabel,
+    liquid: liquidBalance(db), resteAVivre: resteAVivre(liquidBalance(db), upcomingAll.map((o) => o.recurring.amount), today, end).amount,
     liquidProjection: liquidProjection(db, today),
     upcoming: soon.map((o) => ({ name: o.recurring.name, date: o.date, amount: o.recurring.amount })),
     missedIncome, anomalies: findAnomaliesFor(db, today),

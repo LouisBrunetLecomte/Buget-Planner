@@ -202,3 +202,11 @@ Un petit module remplace next-themes, dont le script en ligne était incompatibl
 - L'icône vient de l'image fournie (`macos/Resources/icon-source.png`), recadrée au carré.
 - Pour le Mac, elle est découpée selon le gabarit macOS (carré arrondi de 824 px sur 1024). Pour le web et le téléphone, ce sont des carrés pleins (192, 512, 180 et 64 px).
 - Les deux sont générées par `macos/Scripts/make-icon.swift`.
+
+## D41. Mois budgétaire de paie à paie
+- **Principe** : une période va du jour de paie à la veille du suivant, et porte le nom du mois où elle commence (« 2026-11 » = du 12 novembre au 11 décembre si la paie tombe le 12). Avec le jour 1, on retrouve les mois calendaires.
+- **Jour de départ** : réglage « Automatique » par défaut, qui prend le jour de l'échéance mensuelle de la catégorie Salaire (à défaut, le plus gros revenu mensuel). Il peut aussi être réglé sur les mois calendaires ou sur un jour fixe. Il se met à jour tout seul si la date du salaire change.
+- **Fin de mois** : « le 31 » ou « dernier jour » démarre la période le dernier jour de chaque mois (le 28 février, etc.).
+- **Salaire versé en avance ou en retard** : une opération reconnue comme une échéance (motif du libellé, ±6 jours) compte pour la période de l'échéance. Un salaire versé le vendredi 10 pour le 12 ne gonfle pas la période précédente.
+- **Écrans concernés** : budget (prévu, réel, exceptions, report), reste à vivre (jusqu'à la prochaine paie), alertes, accueil, analyses, prévisions, simulations, règles d'épargne, rapports PDF et assistant.
+- **Écrans non concernés** : le filtre « Mois » des Opérations et le calendrier des échéances restent en mois calendaires, puisqu'ils montrent des dates réelles.

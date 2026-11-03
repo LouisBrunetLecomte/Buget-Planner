@@ -102,6 +102,7 @@ export const DEFAULT_ALERTS: AlertSettings = {
 
 export interface AlertInput {
   today: string
+  period: string                                               // période budgétaire en cours (clé YYYY-MM)
   month: MonthBudget | null
   catLabel: (id: string) => string
   liquid: number
@@ -128,8 +129,8 @@ export function computeAlerts(i: AlertInput, s: AlertSettings): Alert[] {
   }
   if (s.enabled.solde && i.liquid < s.lowBalance) out.push({ id: `solde:${i.today}`, type: 'solde', severity: i.liquid < 0 ? 'critique' : 'attention', title: 'Solde bas', body: `Tes comptes courants totalisent ${eur(i.liquid)} (seuil ${eur(s.lowBalance)}).`, href: '#/comptes' })
   if (s.enabled.decouvert) {
-    if (i.resteAVivre < 0) out.push({ id: `decouvert-mois:${i.today.slice(0, 7)}`, type: 'decouvert', severity: 'critique', title: 'Découvert probable avant la fin du mois', body: `Après les échéances à venir, il manquerait ${eur(-i.resteAVivre)}.`, href: '#/recurrences' })
-    const neg = i.liquidProjection.find((p) => p.balance < 0 && p.month > i.today.slice(0, 7))
+    if (i.resteAVivre < 0) out.push({ id: `decouvert-mois:${i.period}`, type: 'decouvert', severity: 'critique', title: 'Découvert probable avant ta prochaine paie', body: `Après les échéances à venir, il manquerait ${eur(-i.resteAVivre)}.`, href: '#/recurrences' })
+    const neg = i.liquidProjection.find((p) => p.balance < 0 && p.month > i.period)
     if (neg) out.push({ id: `decouvert:${neg.month}`, type: 'decouvert', severity: 'attention', title: `Découvert probable fin ${new Date(neg.month + '-15').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`, body: `Comptes courants projetés à ${eur(neg.balance)} si le budget est suivi.`, href: '#/analyses' })
   }
   if (s.enabled.echeance) for (const u of i.upcoming) {

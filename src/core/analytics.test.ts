@@ -40,7 +40,7 @@ const mb = (month: string, income: number, expense: number, rows: { categoryId: 
 })
 
 describe('alertes', () => {
-  const base = { today: '2026-11-03', catLabel: (id: string) => id, liquid: 50_000, resteAVivre: 10_000, liquidProjection: [], upcoming: [], missedIncome: [], anomalies: [] }
+  const base = { today: '2026-11-03', period: '2026-11', catLabel: (id: string) => id, liquid: 50_000, resteAVivre: 10_000, liquidProjection: [], upcoming: [], missedIncome: [], anomalies: [] }
   it('budget 80 % / 100 %, échéance, revenu manquant, découvert', () => {
     const month = mb('2026-11', 0, 0, [{ categoryId: 'resto', actual: 8500, planned: 10000 }, { categoryId: 'loisirs', actual: 12000, planned: 10000 }, { categoryId: 'ok', actual: 100, planned: 10000 }])
     const a = computeAlerts({ ...base, month, resteAVivre: -500,

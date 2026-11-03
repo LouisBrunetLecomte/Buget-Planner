@@ -2,7 +2,7 @@ import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { asset, assetValue, debt, goal, goalContribution, recurring, savingsRule, scenario, transaction } from './schema'
 import { balances, listAccounts, listCategories } from './repo'
-import { getBudget, occurrencesBetween, listRecurring, liquidBalance, totalBalance } from './budgetRepo'
+import { currentPeriod, getBudget, occurrencesBetween, listRecurring, liquidBalance, periodBounds, totalBalance } from './budgetRepo'
 import { balanceHistory } from './analyticsRepo'
 import { addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
 import { amortize, balanceAt, type Loan } from '@/core/debt'
@@ -41,7 +41,8 @@ export const deleteSavingsRule = (db: Db, id: string) => db.delete(savingsRule).
 
 /** Montant que chaque règle propose de mettre de côté pour un mois donné. */
 export function savingsRuleAmounts(db: Db, month: string) {
-  const range = and(gte(transaction.date, `${month}-01`), lte(transaction.date, endOfMonth(month)), sql`${transaction.transferGroupId} is null`)
+  const { start, end } = periodBounds(db, month)
+  const range = and(gte(transaction.date, start), lte(transaction.date, end), sql`${transaction.transferGroupId} is null`)
   const tx = db.select({ a: transaction.amountEur }).from(transaction).where(range).all()
   const income = getBudget(db, month, month)[0]!.actualIncome
   return listSavingsRules(db).filter((r) => r.active).map((r) => ({
@@ -115,7 +116,7 @@ export const deleteScenario = (db: Db, id: string) => db.delete(scenario).where(
 
 /** Base des simulations : solde des comptes courants + flux nets prévus par le budget (repli : moyenne des 3 derniers mois). */
 export function scenarioBase(db: Db, today: string, months: number) {
-  const cur = monthOf(today)
+  const cur = currentPeriod(db, today)
   const plan = getBudget(db, cur, addMonths(cur, months - 1))
   const hist = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
   const avgNet = Math.round(hist.reduce((s, m) => s + m.actualIncome - m.actualExpense, 0) / Math.max(1, hist.length))
@@ -130,7 +131,7 @@ export const runScenario = (db: Db, today: string, months: number, changes: Chan
 // ---------- calendrier jour par jour ----------
 /** Solde des comptes courants jour par jour : échéances suivies + dépense courante moyenne (hors charges fixes). */
 export function financialCalendar(db: Db, today: string, days = 60) {
-  const cur = monthOf(today)
+  const cur = currentPeriod(db, today)
   const hist = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
   const avgExpense = hist.reduce((s, m) => s + m.actualExpense, 0) / Math.max(1, hist.length)
   const fixed = -listRecurring(db).filter((r) => r.active && r.amount < 0).reduce((s, r) => s + monthlyEquivalent(r, r.amount), 0)

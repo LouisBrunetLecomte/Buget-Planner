@@ -12,7 +12,8 @@ import { hasTouchIdBridge, touchIdDisable, touchIdEnroll, touchIdStatus } from '
 import { Fingerprint } from 'lucide-react'
 import { useEffect } from 'react'
 import { putSetting } from '@/db/repo'
-import { PageHeader, useAccounts } from '@/app/ui'
+import { dayLabel, DaySelect, PageHeader, useAccounts } from '@/app/ui'
+import { currentPeriod, periodBounds, periodDay, periodSetting, salaryDay } from '@/db/budgetRepo'
 import { Checkbox } from '@/components/ui/checkbox'
 import { alertSettings, saveAlertSettings } from '@/db/analyticsRepo'
 import { useDb } from '@/app/store'
@@ -25,6 +26,28 @@ const TYPES: [AlertType, string][] = [
   ['budget', 'Budget presque atteint ou dépassé'], ['solde', 'Solde bas'], ['decouvert', 'Découvert probable'],
   ['echeance', 'Prélèvement à venir'], ['revenu', 'Revenu attendu non reçu'], ['anomalie', 'Anomalies (doublons, montants inhabituels, frais)'],
 ]
+
+function PeriodCard() {
+  const { db, version } = useDb()
+  void version
+  const setting = periodSetting(db), sal = salaryDay(db), day = periodDay(db)
+  const cur = currentPeriod(db, today()), { label } = periodBounds(db, cur)
+  const set = (v: number | 'auto') => mutate((d) => putSetting(d, 'periodStartDay', v), { label: 'Mois budgétaire' })
+  return (
+    <Card>
+      <CardHeader><CardTitle>Mois budgétaire</CardTitle>
+        <CardDescription>Ton budget va d’une paie à la veille de la suivante. Période en cours : <strong className="text-foreground">{label}</strong>.</CardDescription></CardHeader>
+      <CardContent className="grid gap-2 text-sm">
+        <label className="flex items-center gap-2"><input type="radio" name="period" className="accent-current" checked={setting === 'auto'} onChange={() => set('auto')} />
+          Automatique : le jour de ton salaire {sal ? `(${dayLabel(sal)})` : '(aucun salaire daté pour l’instant : 1er du mois)'}</label>
+        <label className="flex items-center gap-2"><input type="radio" name="period" className="accent-current" checked={setting === 1} onChange={() => set(1)} />Mois calendaires (du 1er au dernier jour)</label>
+        <label className="flex items-center gap-2"><input type="radio" name="period" className="accent-current" checked={setting !== 'auto' && setting !== 1} onChange={() => set(day > 1 ? day : 25)} />Un jour fixe :
+          <span className="w-52"><DaySelect value={setting !== 'auto' && setting !== 1 ? setting : null} onChange={(d) => d && set(d)} /></span></label>
+        <p className="text-xs text-muted-foreground">Budget, reste à vivre, alertes, analyses et rapports suivent cette période. Un salaire versé quelques jours en avance compte quand même pour la bonne période.</p>
+      </CardContent>
+    </Card>
+  )
+}
 
 function TouchIdCard() {
   const [st, setSt] = useState<{ available: boolean; enrolled: boolean } | null>(null), [pw, setPw] = useState('')
@@ -186,6 +209,7 @@ export function SettingsPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <AlertsCard />
         <ModulesCard />
+        <PeriodCard />
         <HistoryCard />
         <TouchIdCard />
         <SecurityCard />

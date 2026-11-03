@@ -143,3 +143,17 @@ test('le loyer saisi une fois, modifié dans le Budget, change partout', async (
   await expect(page.getByText('-900,00 €').first()).toBeVisible()
   await expect(page.getByText(/Mensuel, le 5/)).toBeVisible()
 })
+
+test('salaire le 12 : le budget va du 12 au 11 du mois suivant', async ({ page }) => {
+  await createVault(page, false)
+  const dlg = page.getByRole('dialog')
+  for (let i = 0; i < 3; i++) await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByLabel('Ton salaire net (€)').fill('2100')
+  await dlg.getByLabel('Il arrive').click()
+  await page.getByRole('option', { name: 'le 12', exact: true }).click()
+  await dlg.getByRole('button', { name: 'Enregistrer' }).first().click()
+  await dlg.getByRole('button', { name: 'Passer le tutoriel' }).click()
+  await nav(page, 'budget')
+  await expect(page.getByText(/^12 \S+ → 11 \S+ \d{4}$/)).toBeVisible()
+  await expect(page.getByText(/Reste à vivre jusqu’à ta prochaine paie/)).toBeVisible()
+})

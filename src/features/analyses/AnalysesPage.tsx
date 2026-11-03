@@ -4,9 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { axisEuro, axisProps, ChartTooltip, gridProps, LegendItem, monthShort, TableView } from '@/components/charts'
-import { addMonths, monthOf, today } from '@/core/dates'
+import { addMonths, today } from '@/core/dates'
 import { formatMoney } from '@/core/money'
 import * as an from '@/db/analyticsRepo'
+import { currentPeriod } from '@/db/budgetRepo'
 import { useDb } from '@/app/store'
 import { Empty, PageHeader, useCategories } from '@/app/ui'
 
@@ -151,7 +152,8 @@ function YearOverYear({ year }: { year: number }) {
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => an.yearOverYear(db, year), [db, version, year])
-  const cur = monthOf(today())
+  const { db: db0 } = useDb()
+  const cur = currentPeriod(db0, today())
   const data = rows.map((r) => ({ m: new Date(`${r.month}-15`).toLocaleDateString('fr-FR', { month: 'short' }), current: r.month <= cur ? e(r.current) : undefined, previous: e(r.previous) }))
   return (
     <Card>
@@ -177,7 +179,8 @@ function YearOverYear({ year }: { year: number }) {
 }
 
 export function AnalysesPage() {
-  const [month, setMonth] = useState(addMonths(monthOf(today()), -1))
+  const { db } = useDb()
+  const [month, setMonth] = useState(() => addMonths(currentPeriod(db, today()), -1))
   const [horizon, setHorizon] = useState(6)
   return (
     <>

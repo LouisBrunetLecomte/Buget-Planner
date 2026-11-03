@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import type { Db } from '@/db/client'
-import { getBudget } from '@/db/budgetRepo'
+import { getBudget, periodBounds } from '@/db/budgetRepo'
 import { spendingByRoot } from '@/db/analyticsRepo'
 import { netWorth } from '@/db/planningRepo'
 import { listCategories } from '@/db/repo'
@@ -59,7 +59,8 @@ export function monthlyReport(db: Db, month: string) {
   const b = getBudget(db, month, month)[0]!, sp = spendingByRoot(db, month), cats = listCategories(db)
   const name = (id: string) => cats.find((c) => c.id === id)?.name ?? 'Non catégorisé'
   const d = new Doc()
-  d.title(`Rapport mensuel : ${monthName(month)}`, 'Budget personnel, montants en euros, virements internes exclus')
+  const pb = periodBounds(db, month)
+  d.title(`Rapport mensuel : ${pb.label}`, pb.day > 1 ? `Du ${pb.start} au ${pb.end} (de paie à paie), montants en euros, virements internes exclus` : 'Budget personnel, montants en euros, virements internes exclus')
   d.kpis([['Revenus', m(b.actualIncome)], ['Dépenses', m(b.actualExpense)], ['Épargne', m(b.actualIncome - b.actualExpense)], ['Taux d’épargne', `${Math.round(savingsRate([b]) * 100)} %`]])
   d.h('Dépenses par catégorie')
   d.bars(sp.rows.slice(0, 15).map((r) => [name(r.id), r.amount]), sp.total)

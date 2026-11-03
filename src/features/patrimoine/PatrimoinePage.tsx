@@ -12,6 +12,7 @@ import { addMonths, monthOf, today } from '@/core/dates'
 import { amortize, paymentFor, payoffPlan } from '@/core/debt'
 import { formatMoney, parseAmount } from '@/core/money'
 import * as p from '@/db/planningRepo'
+import { currentPeriod } from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
 import { AccountSelect, attempt, DaySelect, Empty, Money, PageHeader } from '@/app/ui'
 
@@ -32,7 +33,7 @@ function Goals() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const goals = useMemo(() => p.goalsStatus(db, today()), [db, version])
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rules = useMemo(() => p.savingsRuleAmounts(db, addMonths(monthOf(today()), -1)), [db, version])
+  const rules = useMemo(() => p.savingsRuleAmounts(db, addMonths(currentPeriod(db, today()), -1)), [db, version])
   const [name, setName] = useState(''), [target, setTarget] = useState(''), [deadline, setDeadline] = useState(''), [accountId, setAccountId] = useState<string | null>(null)
   const [ruleKind, setRuleKind] = useState<'arrondi' | 'pourcentage'>('arrondi'), [ruleValue, setRuleValue] = useState('1'), [ruleGoal, setRuleGoal] = useState<string>('')
   const goalName = (id: string) => goals.find((x) => x.g.id === id)?.g.name ?? '?'

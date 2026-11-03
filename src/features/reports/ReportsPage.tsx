@@ -4,9 +4,10 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { addMonths, monthOf, today } from '@/core/dates'
+import { addMonths, today } from '@/core/dates'
 import { fiscalEstimate, FISCAL_LABEL, type FiscalKind } from '@/core/fiscal'
 import * as x from '@/db/extrasRepo'
+import { currentPeriod } from '@/db/budgetRepo'
 import { useDb } from '@/app/store'
 import { download } from '@/app/files'
 import { Money, PageHeader } from '@/app/ui'
@@ -72,7 +73,7 @@ function Freelance() {
 
 export function ReportsPage() {
   const { db } = useDb()
-  const [month, setMonth] = useState(addMonths(monthOf(today()), -1)), [year, setYear] = useState(() => Number(today().slice(0, 4)))
+  const [month, setMonth] = useState(() => addMonths(currentPeriod(db, today()), -1)), [year, setYear] = useState(() => Number(today().slice(0, 4)))
   const run = async (f: () => Promise<void> | void) => { try { await f() } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) } }
   return (
     <>

@@ -8,13 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { Row, Scope } from '@/core/budget'
 import { parseAmount } from '@/core/money'
 import * as b from '@/db/budgetRepo'
-import { mutate } from '@/app/store'
+import { mutate, useDb } from '@/app/store'
 import { attempt, DaySelect, useCategories } from '@/app/ui'
 
 export const monthName = (m: string) => new Date(`${m}-15`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
 export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: string; month: string; row: Row | null; onClose: () => void }) {
   const { byId, label } = useCategories()
+  const { db } = useDb()
+  const plabel = b.periodBounds(db, month).label // « 12 nov. → 11 déc. 2026 » si la paie n'est pas le 1er
   const cat = byId.get(categoryId)!
   const [amount, setAmount] = useState(row ? (row.planned / 100).toFixed(2).replace('.', ',') : '')
   // par défaut : « tous les mois à partir de » (mois réglable) ; l'exception d'un seul mois reste possible
@@ -54,7 +56,7 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
   }
   const scopes: [Scope, string, string][] = [
     ['from', 'Tous les mois à partir de…', 'Les mois précédents gardent leur montant.'],
-    ['month', `${monthName(month)} seulement`, 'Une exception (vacances, cadeaux…) : le reste du budget ne change pas.'],
+    ['month', `${plabel} seulement`, 'Une exception (vacances, cadeaux…) : le reste du budget ne change pas.'],
     ['all', 'Tous les mois, passé compris', 'Remplace le montant partout.'],
   ]
   return (
@@ -62,7 +64,7 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{label(categoryId)}</DialogTitle>
-          <DialogDescription>{monthName(month)}{row?.base != null && row.exception ? ` · modèle : ${(row.base / 100).toFixed(2)} €` : ''}</DialogDescription>
+          <DialogDescription>{plabel}{row?.base != null && row.exception ? ` · modèle : ${(row.base / 100).toFixed(2)} €` : ''}</DialogDescription>
         </DialogHeader>
         <form id="bform" className="grid gap-3" onSubmit={(e) => { e.preventDefault(); save() }}>
           {sourceMode ? (

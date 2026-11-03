@@ -14,6 +14,7 @@ beforeEach(async () => { SQL ??= await initSqlJs(); db = openDb(SQL).db; cats = 
 const row = (m: string, cat: string) => b.getBudget(db, m, m)[0]!.rows.find((r) => r.categoryId === cats.get(cat))
 
 it('le loyer saisi une fois alimente budget, calendrier, prévisions ; le modifier change tout', () => {
+  repo.putSetting(db, 'periodStartDay', 1) // ce test raisonne en mois calendaires
   const acc = repo.createAccount(db, { name: 'Courant', type: 'courant', openingBalance: 300000, balanceDate: '2026-11-01' })
   const loyer = b.createRecurring(db, { name: 'Loyer', kind: 'charge', amount: -92000, freq: 'month', interval: 1, startDate: '2026-01-05', categoryId: cats.get('Loyer / crédit')!, accountId: acc.id })
   b.createRecurring(db, { name: 'Salaire', kind: 'revenu', amount: 250000, freq: 'month', interval: 1, startDate: '2026-01-28', categoryId: cats.get('Salaire')! })
@@ -68,4 +69,26 @@ it('crédit : sa mensualité devient une charge fixe datée, supprimée avec lui
   expect(row('2026-11', 'Loyer / crédit')!.planned).toBe(pay)
   p.deleteDebt(db, d.id)
   expect(b.listRecurring(db)).toHaveLength(0)
+})
+
+it('budget de paie à paie : salaire le 12 → période du 12 au 11, salaire en avance rattaché à la bonne période', () => {
+  const acc = repo.createAccount(db, { name: 'Courant', type: 'courant' })
+  b.createRecurring(db, { name: 'Salaire', kind: 'revenu', amount: 250000, freq: 'month', interval: 1, startDate: '2026-01-12', dayOfMonth: 12, pattern: 'SALAIRE ACME', categoryId: cats.get('Salaire')! })
+  b.createRecurring(db, { name: 'Loyer', kind: 'charge', amount: -92000, freq: 'month', interval: 1, startDate: '2026-01-05', categoryId: cats.get('Loyer / crédit')! })
+  expect(b.periodDay(db)).toBe(12) // déduit du salaire
+  expect(b.periodBounds(db, '2026-11')).toMatchObject({ start: '2026-11-12', end: '2026-12-11', label: '12 nov. → 11 déc. 2026' })
+  expect(b.currentPeriod(db, '2026-11-11')).toBe('2026-10')
+  // période « novembre » : le loyer qui tombe dedans est celui du 5 décembre
+  expect(row('2026-11', 'Loyer / crédit')!.items.map((i) => i.date)).toEqual(['2026-12-05'])
+  // salaire de novembre versé le mardi 10 (en avance) : il compte pour la période qui commence le 12, pas pour la précédente
+  repo.addTransaction(db, { accountId: acc.id, date: '2026-11-10', amount: 250000, label: 'VIR SALAIRE ACME NOV' })
+  repo.addTransaction(db, { accountId: acc.id, date: '2026-11-11', amount: -4000, label: 'CB COURSES', categoryId: cats.get('Courses')! })
+  repo.addTransaction(db, { accountId: acc.id, date: '2026-11-12', amount: -3000, label: 'CB COURSES', categoryId: cats.get('Courses')! })
+  const a = b.actualsBetween(db, '2026-10', '2026-11')
+  expect(a.get('2026-11')!.get('')).toBe(250000)
+  expect(a.get('2026-10')!.get(cats.get('Courses')!)).toBe(-4000)
+  expect(a.get('2026-11')!.get(cats.get('Courses')!)).toBe(-3000)
+  // réglage manuel : retour aux mois calendaires
+  repo.putSetting(db, 'periodStartDay', 1)
+  expect(b.actualsBetween(db, '2026-11', '2026-11').get('2026-11')!.get(cats.get('Courses')!)).toBe(-7000)
 })

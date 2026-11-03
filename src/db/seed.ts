@@ -91,5 +91,6 @@ export function seedDemo(db: Db, end = new Date()) {
   for (let k = 10; k >= 0; k--) setAssetValue(db, av.id, `${addMonths(month, -k)}-01`, 1_500_000 + (11 - k) * 18_000)
   saveScenario(db, { name: 'Perte d’emploi 3 mois', changes: [{ type: 'mensuel', label: 'Salaire remplacé par l’ARE', amount: -95_000, from: addMonths(month, 2), to: addMonths(month, 4) }] })
   putSetting(db, 'tutorialDone', true) // la démo est déjà remplie : pas de tutoriel
+  putSetting(db, 'periodStartDay', 1) // démo en mois calendaires (tests stables)
   return { accounts: [courant, livret, revolut, usd] }
 }

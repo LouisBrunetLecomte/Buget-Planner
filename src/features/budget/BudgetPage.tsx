@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { addMonths, daysInMonth, endOfMonth, monthOf, monthsBetween, today } from '@/core/dates'
+import { addMonths, daysInMonth, monthsBetween, today } from '@/core/dates'
 import { projectBalances, resteAVivre, type MonthBudget, type Row } from '@/core/budget'
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
@@ -32,15 +32,15 @@ function Bar({ value, max, income }: { value: number; max: number; income?: bool
 export function ResteAVivre() {
   const { db, version } = useDb()
   const r = useMemo(() => {
-    const t = today(), end = endOfMonth(monthOf(t))
+    const t = today(), end = b.periodBounds(db, b.currentPeriod(db, t)).end
     const upcoming = b.occurrencesBetween(db, t, end).filter((o) => !o.paid).map((o) => o.recurring.amount)
-    return { ...resteAVivre(b.liquidBalance(db), upcoming, t, end), count: upcoming.length }
+    return { ...resteAVivre(b.liquidBalance(db), upcoming, t, end), count: upcoming.length, day: b.periodDay(db) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version])
   return (
     <Card size="sm" className={cn(r.amount < 0 && 'border-destructive')}>
       <CardHeader>
-        <CardDescription>Reste à vivre jusqu’à la fin du mois</CardDescription>
+        <CardDescription>{r.day > 1 ? 'Reste à vivre jusqu’à ta prochaine paie' : 'Reste à vivre jusqu’à la fin du mois'}</CardDescription>
         <CardTitle className="text-2xl"><Money cents={r.perDay} colored={false} /> <span className="text-sm font-normal text-muted-foreground">/ jour pendant {r.daysLeft} j</span></CardTitle>
         <CardDescription className="text-xs">{formatMoney(r.amount)} = solde des comptes courants {r.count ? `après ${r.count} échéance(s) à venir` : ''}</CardDescription>
       </CardHeader>
@@ -50,7 +50,8 @@ export function ResteAVivre() {
 
 function Summary({ m }: { m: MonthBudget }) {
   // mois passé : réel ; mois en cours ou futur : prévu (sinon tout ce qui n'est pas encore dépensé passerait pour de l'épargne)
-  const real = m.month < monthOf(today())
+  const { db } = useDb()
+  const real = m.month < b.currentPeriod(db, today())
   const income = real ? m.actualIncome : m.plannedIncome
   const pct = (v: number) => (income > 0 ? Math.round((v / income) * 100) : 0)
   const besoin = m.buckets.besoin[real ? 'actual' : 'planned'], envie = m.buckets.envie[real ? 'actual' : 'planned']
@@ -145,7 +146,7 @@ function MonthView({ month }: { month: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const m = useMemo(() => b.getBudget(db, month, month)[0]!, [db, version, month])
   const [edit, setEdit] = useState<{ categoryId: string; row: Row | null } | null>(null)
-  const isCurrent = month === monthOf(today())
+  const isCurrent = month === b.currentPeriod(db, today())
   const size = (r: Row) => Math.max(r.planned + r.carry, r.actual)
   const groups = (['revenu', 'depense'] as const).map((k) => ({ k, rows: m.rows.filter((r) => r.kind === k).sort((a, b) => size(b) - size(a)) }))
 
@@ -164,7 +165,7 @@ function MonthView({ month }: { month: string }) {
       </div>
       {m.rows.length === 0 ? (
         <Empty>
-          Aucun budget pour {monthName(month)}.
+          Aucun budget pour {b.periodBounds(db, month).label}.
           <div className="mt-3"><Button onClick={propose}>Proposer un budget à partir de mon historique</Button></div>
         </Empty>
       ) : groups.map((g) => g.rows.length > 0 && (
@@ -189,7 +190,7 @@ function MonthView({ month }: { month: string }) {
 function YearView({ month }: { month: string }) {
   const { db, version } = useDb()
   const { label } = useCategories()
-  const year = month.slice(0, 4), cur = monthOf(today())
+  const year = month.slice(0, 4), cur = b.currentPeriod(db, today())
   const data = useMemo(() => {
     const months = b.getBudget(db, `${year}-01`, `${year}-12`)
     const proj = b.getBudget(db, cur, addMonths(cur, 11))
@@ -261,15 +262,19 @@ function YearView({ month }: { month: string }) {
 }
 
 export function BudgetPage() {
-  const [month, setMonth] = useState(monthOf(today()))
+  const { db, version } = useDb()
+  const [month, setMonth] = useState(() => b.currentPeriod(db, today()))
+  const cur = b.currentPeriod(db, today())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const bounds = useMemo(() => b.periodBounds(db, month), [db, version, month])
   return (
     <>
       <PageHeader title="Budget">
         <div className="flex items-center gap-1">
           <Button size="icon" variant="outline" aria-label="Mois précédent" onClick={() => setMonth(addMonths(month, -1))}><ChevronLeft /></Button>
-          <span className="w-36 text-center font-medium capitalize">{monthName(month)}</span>
+          <span className="min-w-36 text-center font-medium capitalize" title={bounds.day > 1 ? `De ta paie du ${bounds.start} à la veille de la suivante` : undefined}>{bounds.label}</span>
           <Button size="icon" variant="outline" aria-label="Mois suivant" onClick={() => setMonth(addMonths(month, 1))}><ChevronRight /></Button>
-          {month !== monthOf(today()) && <Button size="sm" variant="ghost" onClick={() => setMonth(monthOf(today()))}>Aujourd’hui</Button>}
+          {month !== cur && <Button size="sm" variant="ghost" onClick={() => setMonth(cur)}>Aujourd’hui</Button>}
         </div>
       </PageHeader>
       <Tabs defaultValue="month">

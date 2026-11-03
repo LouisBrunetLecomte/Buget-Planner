@@ -3,11 +3,11 @@ import { Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
-import { addMonths, monthOf, today } from '@/core/dates'
+import { addMonths, today } from '@/core/dates'
 import { ollamaChat, SYSTEM_PROMPT, type ChatMessage } from '@/core/assistant'
 import { formatMoney } from '@/core/money'
 import type { Db } from '@/db/client'
-import { getBudget, listRecurring, totalBalance, liquidBalance } from '@/db/budgetRepo'
+import { currentPeriod, getBudget, listRecurring, periodBounds, totalBalance, liquidBalance } from '@/db/budgetRepo'
 import { spendingByRoot } from '@/db/analyticsRepo'
 import { goalsStatus } from '@/db/planningRepo'
 import { listCategories } from '@/db/repo'
@@ -17,11 +17,11 @@ import { Empty, PageHeader } from '@/app/ui'
 
 /** Résumé chiffré envoyé au modèle local : agrégats seulement, pas la liste brute des opérations. */
 function context(db: Db): string {
-  const cur = monthOf(today()), cats = listCategories(db), name = (id: string) => cats.find((c) => c.id === id)?.name ?? 'Non catégorisé'
+  const cur = currentPeriod(db, today()), cats = listCategories(db), name = (id: string) => cats.find((c) => c.id === id)?.name ?? 'Non catégorisé'
   const lines = [`Date du jour : ${today()}. Solde total : ${formatMoney(totalBalance(db))}. Comptes courants : ${formatMoney(liquidBalance(db))}.`]
   for (const m of getBudget(db, addMonths(cur, -3), cur)) {
     const sp = spendingByRoot(db, m.month).rows.slice(0, 8).map((r) => `${name(r.id)} ${formatMoney(r.amount)}`).join(', ')
-    lines.push(`${m.month}${m.month === cur ? ' (en cours)' : ''} : revenus ${formatMoney(m.actualIncome)}, dépenses ${formatMoney(m.actualExpense)}, budget prévu ${formatMoney(m.plannedExpense)}. Principales dépenses : ${sp}.`)
+    lines.push(`${periodBounds(db, m.month).label}${m.month === cur ? ' (en cours)' : ''} : revenus ${formatMoney(m.actualIncome)}, dépenses ${formatMoney(m.actualExpense)}, budget prévu ${formatMoney(m.plannedExpense)}. Principales dépenses : ${sp}.`)
   }
   const rec = listRecurring(db).filter((r) => r.active).map((r) => `${r.name} ${formatMoney(r.amount)}`).join(', ')
   if (rec) lines.push(`Charges et revenus récurrents : ${rec}.`)

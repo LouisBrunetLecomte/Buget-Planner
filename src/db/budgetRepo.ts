@@ -4,6 +4,7 @@ import { account, budgetException, budgetLine, category, recurring, transaction,
 import { balances, cachedRates, getSetting, listCategories, putSetting, transferSuggestions } from './repo'
 import { normalizeLabel } from '@/core/labels'
 import { addDays, addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
+import { periodEnd, periodLabel, periodOf, periodStart } from '@/core/period'
 import { rateOn } from '@/core/fx'
 import { detectRecurring, matchOccurrences, monthlyEquivalent, occurrences, priceIncrease, type MatchTx, type Suggestion } from '@/core/recurring'
 import { applyScope, computeBudget, type Actuals, type PlannedItem, type RecurringPlan, type Scope } from '@/core/budget'
@@ -42,12 +43,13 @@ export function updateRecurringFrom(db: Db, id: string, fromMonth: string, patch
 
 /** Échéances datées de chaque mois, rangées par catégorie : elles alimentent directement le budget. */
 export function recurringPlan(db: Db, from: string, to: string): RecurringPlan {
-  const plan: RecurringPlan = new Map()
+  const plan: RecurringPlan = new Map(), day = periodDay(db)
   for (const r of listRecurring(db).filter((x) => x.active && x.categoryId)) {
-    for (const date of occurrences(r, `${from}-01`, endOfMonth(to))) {
-      const m = plan.get(monthOf(date)) ?? new Map<string, PlannedItem[]>()
+    for (const date of occurrences(r, periodStart(from, day), periodEnd(to, day))) {
+      const k = periodOf(date, day)
+      const m = plan.get(k) ?? new Map<string, PlannedItem[]>()
       m.set(r.categoryId!, [...(m.get(r.categoryId!) ?? []), { id: r.id, name: r.name, date, amount: r.amount }])
-      plan.set(monthOf(date), m)
+      plan.set(k, m)
     }
   }
   return plan
@@ -117,24 +119,51 @@ export function recurringSuggestions(db: Db, today: string): (Suggestion & { kin
 export const ignoreSuggestion = (db: Db, pattern: string) =>
   putSetting(db, 'ignoredRecurring', [...(getSetting<string[]>(db, 'ignoredRecurring') ?? []), pattern])
 
-// ---------- réel par mois ----------
-/** Somme signée en EUR par mois et catégorie (ventilations comprises, virements internes exclus). */
+// ---------- période budgétaire (d'une paie à l'autre) ----------
+/** Jour de paie : celui du salaire (échéance mensuelle de la catégorie « Salaire », sinon le plus gros revenu mensuel). */
+export function salaryDay(db: Db): number | null {
+  const cats = listCategories(db), sal = cats.find((c) => c.name === 'Salaire')?.id
+  const revs = listRecurring(db).filter((r) => r.active && r.kind === 'revenu' && r.freq === 'month' && r.interval === 1 && (!r.endDate || r.endDate >= new Date().toISOString().slice(0, 10)))
+  const r = revs.find((x) => x.categoryId === sal) ?? [...revs].sort((a, b) => b.amount - a.amount)[0]
+  return r ? (r.dayOfMonth ?? Number(r.startDate.slice(8, 10))) : null
+}
+/** Réglage « mois budgétaire » : 'auto' (jour du salaire, par défaut) ou un jour fixe (1 = mois calendaires). */
+export const periodSetting = (db: Db) => getSetting<number | 'auto'>(db, 'periodStartDay') ?? 'auto'
+export function periodDay(db: Db): number {
+  const s = periodSetting(db)
+  return s === 'auto' ? (salaryDay(db) ?? 1) : s
+}
+export const currentPeriod = (db: Db, today: string) => periodOf(today, periodDay(db))
+export const periodBounds = (db: Db, key: string) => { const d = periodDay(db); return { start: periodStart(key, d), end: periodEnd(key, d), label: periodLabel(key, d), day: d } }
+
+// ---------- réel par période ----------
+/**
+ * Somme signée en EUR par période et catégorie (ventilations comprises, virements internes exclus).
+ * Une opération reconnue comme une échéance (salaire versé le 10 au lieu du 12) compte pour la période de l'échéance.
+ */
 export function actualsBetween(db: Db, from: string, to: string): Actuals {
-  const range = and(gte(transaction.date, `${from}-01`), lte(transaction.date, endOfMonth(to)), isNull(transaction.transferGroupId))
-  const plain = db.select({ m: sql<string>`substr(${transaction.date}, 1, 7)`, c: sql<string>`coalesce(${transaction.categoryId}, '')`, s: sql<number>`sum(${transaction.amountEur})` })
-    .from(transaction).where(and(range, sql`not exists (select 1 from ${transactionSplit} where ${transactionSplit.transactionId} = ${transaction.id})`))
-    .groupBy(sql`1`, sql`2`).all()
-  // part en EUR d'une ventilation = part × (montant EUR / montant d'origine)
-  const splits = db.select({ m: sql<string>`substr(${transaction.date}, 1, 7)`, c: transactionSplit.categoryId,
-    s: sql<number>`sum(round(${transactionSplit.amount} * 1.0 * ${transaction.amountEur} / ${transaction.amount}))` })
-    .from(transactionSplit).innerJoin(transaction, eq(transaction.id, transactionSplit.transactionId)).where(range)
-    .groupBy(sql`1`, sql`2`).all()
-  const out: Actuals = new Map()
-  for (const r of [...plain, ...splits]) {
-    const m = out.get(r.m) ?? new Map<string, number>()
-    m.set(r.c, (m.get(r.c) ?? 0) + r.s)
-    out.set(r.m, m)
+  const day = periodDay(db), lo = addDays(periodStart(from, day), -10), hi = addDays(periodEnd(to, day), 10)
+  const range = and(gte(transaction.date, lo), lte(transaction.date, hi), isNull(transaction.transferGroupId))
+  const override = new Map<string, string>()
+  for (const r of listRecurring(db).filter((x) => x.active && x.pattern)) {
+    const dates = occurrences(r, lo, hi)
+    for (const [date, t] of matchOccurrences(dates, matchingTxs(db, r).filter((t) => t.date >= lo && t.date <= hi), r)) override.set(t.id, periodOf(date, day))
   }
+  const keyOf = (id: string, date: string) => override.get(id) ?? periodOf(date, day)
+  const out: Actuals = new Map()
+  const add = (k: string, c: string, v: number) => {
+    if (k < from || k > to) return
+    const m = out.get(k) ?? new Map<string, number>()
+    m.set(c, (m.get(c) ?? 0) + v)
+    out.set(k, m)
+  }
+  const splitTx = new Set(db.selectDistinct({ id: transactionSplit.transactionId }).from(transactionSplit).all().map((x) => x.id))
+  for (const t of db.select({ id: transaction.id, date: transaction.date, c: transaction.categoryId, a: transaction.amountEur }).from(transaction).where(range).all())
+    if (!splitTx.has(t.id)) add(keyOf(t.id, t.date), t.c ?? '', t.a)
+  // part en EUR d'une ventilation = part × (montant EUR / montant d'origine)
+  for (const s of db.select({ id: transaction.id, date: transaction.date, c: transactionSplit.categoryId, part: transactionSplit.amount, a: transaction.amountEur, o: transaction.amount })
+    .from(transactionSplit).innerJoin(transaction, eq(transaction.id, transactionSplit.transactionId)).where(range).all())
+    add(keyOf(s.id, s.date), s.c, Math.round((s.part * s.a) / s.o))
   return out
 }
 
