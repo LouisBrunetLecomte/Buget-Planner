@@ -1,0 +1,196 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
+import { parseAmount, formatMoney } from '@/core/money'
+import { normalizeLabel } from '@/core/labels'
+import { categorize } from '@/core/rules'
+import { today } from '@/core/dates'
+import * as repo from '@/db/repo'
+import { mutate, useDb } from '@/app/store'
+import { AccountSelect, attempt, CategorySelect, Empty, Money, PageHeader, useAccounts, useCategories } from '@/app/ui'
+import { TxDialog } from './TxDialog'
+import { isFreelance } from '@/db/extrasRepo'
+
+const LAST_ACCOUNT = 'budget:lastAccount' // non sensible : simple identifiant aléatoire
+
+function QuickAdd() {
+  const { db, version } = useDb()
+  const accounts = useAccounts().filter((a) => !a.archived)
+  const [accountId, setAccountId] = useState<string | null>(() => localStorage.getItem(LAST_ACCOUNT))
+  const [amount, setAmount] = useState(''), [label, setLabel] = useState(''), [date, setDate] = useState(today())
+  const [categoryId, setCategoryId] = useState<string | null>(null), [touched, setTouched] = useState(false)
+  const amountRef = useRef<HTMLInputElement>(null)
+  const acc = accounts.find((a) => a.id === accountId) ?? accounts[0]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rules = useMemo(() => repo.listRules(db), [db, version])
+  const suggested = acc && label ? categorize(rules, normalizeLabel(label), acc.id) : null
+
+  // "n" n'importe où : nouvelle opération
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => {
+      if (e.key === 'n' && !e.metaKey && !e.ctrlKey && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement).isContentEditable)) {
+        e.preventDefault(); amountRef.current?.focus()
+      }
+    }
+    addEventListener('keydown', f); return () => removeEventListener('keydown', f)
+  }, [])
+
+  if (!acc) return null
+  function submit() {
+    // saisie sans signe = dépense ; "+" devant = revenu
+    const raw = parseAmount(amount)
+    if (raw === null || raw === 0) return toast.error('Montant illisible')
+    const cents = amount.trim().startsWith('+') || amount.trim().startsWith('-') ? raw : -raw
+    const ok = attempt(() => mutate((d) => repo.addTransaction(d, { accountId: acc!.id, date, amount: cents, label: label.trim() || '(saisie)', categoryId: touched ? categoryId : (suggested ?? null) }), { label: `Ajout : ${label.trim() || 'saisie'}` }))
+    if (!ok) return
+    localStorage.setItem(LAST_ACCOUNT, acc!.id)
+    toast.success(`${formatMoney(cents, acc!.currency)} ajouté`)
+    setAmount(''); setLabel(''); setCategoryId(null); setTouched(false)
+    amountRef.current?.focus()
+  }
+
+  return (
+    <form aria-label="Saisie rapide" className="mb-4 grid grid-cols-2 gap-2 rounded-lg border bg-card p-3 md:grid-cols-[7rem_1fr_12rem_10rem_9rem_auto]"
+      onSubmit={(e) => { e.preventDefault(); submit() }}>
+      <Input ref={amountRef} aria-label="Montant (préfixe + pour un revenu)" placeholder="12,50 ou +100" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+      <Input aria-label="Libellé" placeholder="Libellé" value={label} onChange={(e) => setLabel(e.target.value)} />
+      <CategorySelect value={touched ? categoryId : suggested} onChange={(v) => { setCategoryId(v); setTouched(true) }} placeholder="Catégorie" />
+      <AccountSelect value={acc.id} onChange={(v) => v && setAccountId(v)} />
+      <Input aria-label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <Button type="submit" className="col-span-2 md:col-span-1">Ajouter</Button>
+    </form>
+  )
+}
+
+const IGNORED = 'ignoredTransferPairs'
+
+function TransferSuggestions() {
+  const { db, version } = useDb()
+  const accounts = useAccounts()
+  const name = (id: string) => accounts.find((a) => a.id === id)?.name ?? '?'
+  const pairs = useMemo(() => {
+    const ignored = new Set(repo.getSetting<string[]>(db, IGNORED) ?? [])
+    return repo.transferSuggestions(db).filter(([a, b]) => !ignored.has(`${a.id}|${b.id}`))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version])
+  if (!pairs.length) return null
+  return (
+    <details className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+      <summary className="cursor-pointer font-medium">{pairs.length} virement(s) interne(s) probable(s) à confirmer</summary>
+      <ul className="mt-2 grid gap-2">
+        {pairs.map(([a, b]) => (
+          <li key={a.id} className="flex flex-wrap items-center justify-between gap-2">
+            <span>{a.date} · {name(a.accountId)} → {name(b.accountId)} · <Money cents={b.amountEur} colored={false} /> <span className="text-muted-foreground">({a.label} / {b.label})</span></span>
+            <span className="flex gap-1">
+              <Button size="sm" onClick={() => mutate((d) => repo.linkTransfer(d, [a.id, b.id]))}>C’est un virement interne</Button>
+              <Button size="sm" variant="ghost" onClick={() => mutate((d) => repo.putSetting(d, IGNORED, [...(repo.getSetting<string[]>(d, IGNORED) ?? []), `${a.id}|${b.id}`]))}>Non</Button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
+export function TransactionsPage() {
+  const { db, version } = useDb()
+  const accounts = useAccounts()
+  const { label: catLabel } = useCategories()
+  const [q, setQ] = useState(''), [accountId, setAccountId] = useState<string | null>(null)
+  const [categoryId, setCategoryId] = useState<string | null>(null), [month, setMonth] = useState('')
+  const [onlyUncat, setOnlyUncat] = useState(false), [scope, setScope] = useState<'all' | 'pro' | 'perso'>('all')
+  const freelance = isFreelance(db)
+  const [selected, setSelected] = useState<Set<string>>(new Set()), [editing, setEditing] = useState<repo.Tx | null>(null)
+
+  const txs = useMemo(() => repo.listTransactions(db, {
+    q: q.trim() || undefined, accountId: accountId ?? undefined,
+    categoryId: onlyUncat ? 'none' : (categoryId ?? undefined),
+    ...(month ? { from: `${month}-01`, to: `${month}-31` } : {}),
+    limit: 1000,
+    ...(scope !== 'all' ? { pro: scope === 'pro' } : {}),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [db, version, q, accountId, categoryId, month, onlyUncat, scope])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const splitIds = useMemo(() => repo.listSplitTxIds(db), [db, version])
+  const accName = (id: string) => accounts.find((a) => a.id === id)?.name ?? ''
+  const visibleSel = txs.filter((t) => selected.has(t.id)).map((t) => t.id)
+  const total = txs.filter((t) => !t.transferGroupId).reduce((s, t) => s + t.amountEur, 0)
+
+  if (!accounts.length) return <><PageHeader title="Opérations" /><Empty>Crée d’abord un compte dans l’onglet <a className="underline" href="#/comptes">Comptes</a>.</Empty></>
+
+  return (
+    <>
+      <PageHeader title="Opérations" />
+      <QuickAdd />
+      <TransferSuggestions />
+      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-[1fr_12rem_14rem_10rem_auto]">
+        <Input className="col-span-2 md:col-span-1" type="search" aria-label="Rechercher" placeholder="Rechercher (libellé, note, montant)…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <AccountSelect value={accountId} onChange={setAccountId} allLabel="Tous les comptes" />
+        <CategorySelect value={categoryId} onChange={setCategoryId} allowNone={false} placeholder="Toutes catégories" />
+        <Input type="month" aria-label="Mois" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <label className="col-span-2 flex items-center gap-2 text-sm md:col-span-1"><Checkbox checked={onlyUncat} onCheckedChange={(v) => setOnlyUncat(v === true)} />Non catégorisées</label>
+        {freelance && (
+          <div className="col-span-2 flex gap-1 md:col-span-5" role="group" aria-label="Pro ou perso">
+            {(['all', 'perso', 'pro'] as const).map((k) => <Button key={k} size="xs" variant={scope === k ? 'default' : 'outline'} aria-pressed={scope === k} onClick={() => setScope(k)}>{{ all: 'Tout', perso: 'Perso', pro: 'Pro' }[k]}</Button>)}
+          </div>
+        )}
+      </div>
+      {(categoryId || accountId || month || q || onlyUncat) && (
+        <Button variant="link" size="sm" className="mb-2 px-0" onClick={() => { setQ(''); setAccountId(null); setCategoryId(null); setMonth(''); setOnlyUncat(false) }}>Effacer les filtres</Button>
+      )}
+
+      {visibleSel.length > 0 && (
+        <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 rounded-lg border bg-background p-2 shadow-sm">
+          <span className="text-sm">{visibleSel.length} sélectionnée(s)</span>
+          <div className="w-56"><CategorySelect value={null} placeholder="Catégoriser en…" onChange={(c) => { mutate((d) => repo.setCategoryBulk(d, visibleSel, c), { label: `Catégorisation de ${visibleSel.length} opération(s)` }); setSelected(new Set()) }} /></div>
+          <Button size="sm" variant="destructive" onClick={() => { if (confirm(`Supprimer ${visibleSel.length} opération(s) ?`)) { mutate((d) => repo.deleteTransactions(d, visibleSel), { label: `Suppression de ${visibleSel.length} opération(s)` }); setSelected(new Set()) } }}>Supprimer</Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Annuler</Button>
+        </div>
+      )}
+
+      {txs.length === 0 ? <Empty>Aucune opération. Ajoute-en une ci-dessus ou <a className="underline" href="#/import">importe un relevé</a>.</Empty> : (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="w-8 p-2"><Checkbox aria-label="Tout sélectionner" checked={visibleSel.length === txs.length} onCheckedChange={(v) => setSelected(v === true ? new Set(txs.map((t) => t.id)) : new Set())} /></th>
+                <th className="p-2">Date</th><th className="p-2">Libellé</th><th className="hidden p-2 md:table-cell">Catégorie</th><th className="hidden p-2 lg:table-cell">Compte</th><th className="p-2 text-right">Montant</th>
+              </tr>
+            </thead>
+            <tbody>
+              {txs.map((t) => (
+                <tr key={t.id} className="cursor-pointer border-t hover:bg-muted/40" onClick={() => setEditing(t)}>
+                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox aria-label={`Sélectionner ${t.label}`} checked={selected.has(t.id)} onCheckedChange={(v) => { const s = new Set(selected); if (v === true) s.add(t.id); else s.delete(t.id); setSelected(s) }} />
+                  </td>
+                  <td className="whitespace-nowrap p-2 tabular-nums">{new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'UTC' })}</td>
+                  <td className="max-w-[16rem] p-2">
+                    <button type="button" className="block w-full truncate text-left font-medium" onClick={(e) => { e.stopPropagation(); setEditing(t) }}>{t.label}</button>
+                    <span className="block truncate text-xs text-muted-foreground md:hidden">{t.transferGroupId ? 'Virement interne' : splitIds.has(t.id) ? 'Ventilée' : catLabel(t.categoryId) ?? 'Non catégorisé'}</span>
+                    {t.notes && <span className="block truncate text-xs text-muted-foreground">{t.notes}</span>}
+                  </td>
+                  <td className="hidden p-2 md:table-cell">
+                    {t.transferGroupId ? <Badge variant="secondary">Virement interne</Badge>
+                      : splitIds.has(t.id) ? <Badge variant="outline">Ventilée</Badge>
+                      : t.categoryId ? <span>{catLabel(t.categoryId)}</span>
+                      : <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-400">À catégoriser</Badge>}
+                  </td>
+                  <td className="hidden p-2 text-muted-foreground lg:table-cell">{accName(t.accountId)}</td>
+                  <td className="p-2 text-right">
+                    <Money cents={t.amount} currency={t.currency} />
+                    {t.currency !== 'EUR' && <span className="block text-xs text-muted-foreground">{formatMoney(t.amountEur)}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr className="border-t bg-muted/30 text-sm"><td colSpan={5} className="p-2 text-right text-muted-foreground">Solde net affiché (hors virements internes, en EUR)</td><td className="p-2 text-right font-medium"><Money cents={total} /></td></tr></tfoot>
+          </table>
+        </div>
+      )}
+      {editing && <TxDialog tx={editing} onClose={() => setEditing(null)} />}
+    </>
+  )
+}
