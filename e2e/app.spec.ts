@@ -16,7 +16,7 @@ const nav = (page: Page, route: string) => page.evaluate((r) => { location.hash 
 
 test('création, verrouillage, mauvais mot de passe, persistance', async ({ page }) => {
   await createVault(page)
-  await expect(page.getByText('Il te reste')).toBeVisible()
+  await expect(page.getByText('Après tes charges et ton budget')).toBeVisible()
   await page.getByRole('button', { name: 'Verrouiller' }).click()
   await page.getByLabel('Mot de passe').fill('pas-le-bon')
   await page.getByRole('button', { name: 'Déverrouiller' }).click()
@@ -159,7 +159,7 @@ test('salaire le 12 : le budget va du 12 au 11 du mois suivant', async ({ page }
   await nav(page, 'budget')
   await expect(page.getByText(/^12 \S+ → 11 \S+ \d{4}$/).first()).toBeVisible()
   await nav(page, 'accueil')
-  await expect(page.getByText(/par jour · paie \S+ 12 /)).toBeVisible()
+  await expect(page.getByText(/jusqu’au \S+ 12 /)).toBeVisible()
 })
 
 test('cocher « reçu » / « payé » fait avancer le budget et le solde', async ({ page }) => {

@@ -248,3 +248,8 @@ Pour un compte dont le solde a été saisi à une date :
 - **Navigation** : Accueil, Budget, Opérations ; le reste dans « Plus », sur mobile aussi. Le thème se règle dans les Réglages.
 - **Budget** : une ligne de résumé (reçu, payé, revenus sans affectation) remplace 5 cartes. Le 50/30/20 et l'ajout d'une catégorie existante disparaissent (« Nouveau libellé » réutilise une catégorie du même nom).
 - **Opérations** : seule la recherche est visible, les autres filtres sont derrière « Filtres ».
+
+## D48. Accueil : le vrai solde d'abord
+- **En grand** : le solde réel des comptes courants, le même chiffre que l'app de la banque (lien pour le corriger).
+- **En dessous** : ce qu'il en restera après les charges et le budget d'ici la prochaine paie, et par jour.
+- **Argent attendu** (revenu non coché) : affiché à part, jamais ajouté. Avant, il gonflait le chiffre principal, qui ne correspondait plus au compte.

@@ -16,27 +16,39 @@ const Section = ({ title, children, className }: { title: string; children: Reac
   <section className={cn('rounded-2xl border bg-card p-5', className)}><h2 className="mb-3 text-sm font-medium text-muted-foreground">{title}</h2>{children}</section>
 )
 
-/** La seule question de l'accueil : combien il me reste jusqu'à la prochaine paie. */
+/**
+ * Accueil : ce qu'il y a vraiment sur le compte (comme dans l'app de la banque), puis ce qu'il en restera après
+ * les charges et le budget d'ici la prochaine paie. L'argent attendu mais pas encore arrivé n'est jamais mélangé.
+ */
 function Remaining() {
   const { db, version } = useDb()
+  const accounts = useAccounts()
   const r = useMemo(() => {
     const x = b.resteAVivreFor(db, today())
-    return { ...x, payday: addDays(x.end, 1) }
+    const after = x.liquid - x.dated - x.envelopes
+    return { ...x, after, perDay: Math.floor(after / x.daysLeft), payday: addDays(x.end, 1) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version])
-  const lines: [string, number][] = [['Sur tes comptes courants', r.liquid], ['À recevoir', r.incoming], ['Charges à payer', -r.dated], ['Budget encore à dépenser', -r.envelopes]]
+  const n = accounts.filter((a) => !a.archived && (a.type === 'courant' || a.type === 'carte' || a.type === 'especes')).length
+  const lines: [string, number][] = [[n > 1 ? 'Sur tes comptes courants' : 'Sur ton compte', r.liquid], ['Charges encore à payer', -r.dated], ['Budget encore à dépenser', -r.envelopes]]
   return (
     <section className="rounded-2xl border bg-card px-5 py-8 text-center">
-      <p className="text-sm text-muted-foreground">Il te reste</p>
-      <p className={cn('my-1 text-5xl font-semibold tracking-tight', r.amount < 0 && 'text-destructive')}>{formatMoney(r.amount)}</p>
-      <p className="text-sm text-muted-foreground">
-        {formatMoney(Math.max(0, r.perDay))} par jour · {r.day > 1 ? 'paie' : 'nouveau mois'} {fmtDay(r.payday)}
+      <p className="text-sm text-muted-foreground">{n > 1 ? 'Sur tes comptes' : 'Sur ton compte'}</p>
+      <a href="#/comptes" className="my-1 block text-5xl font-semibold tracking-tight" title="Voir ou corriger tes comptes">{formatMoney(r.liquid)}</a>
+      <p className={cn('text-sm', r.after < 0 ? 'text-destructive' : 'text-muted-foreground')}>
+        Après tes charges et ton budget : <strong className="font-medium text-foreground">{formatMoney(r.after)}</strong>
+        {r.after > 0 && <> · {formatMoney(r.perDay)} par jour</>} jusqu’au {fmtDay(r.payday)}
       </p>
+      {r.incoming > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">+ {formatMoney(r.incoming)} attendus, pas encore reçus : coche-les ci-dessous quand ils arrivent.</p>
+      )}
       <details className="mx-auto mt-4 max-w-xs text-left text-xs text-muted-foreground">
         <summary className="cursor-pointer text-center">Comment c’est calculé</summary>
         <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
           {lines.map(([l, v], i) => [<dt key={l}>{l}</dt>, <dd key={l + 'v'} className="text-right">{i > 0 && v >= 0 ? '+' : ''}{formatMoney(v)}</dd>])}
+          <dt className="border-t pt-0.5 font-medium text-foreground">Après</dt><dd className="border-t pt-0.5 text-right font-medium text-foreground">{formatMoney(r.after)}</dd>
         </dl>
+        <p className="mt-2">Ce n’est pas le montant de ta banque ? <a className="underline" href="#/comptes">Corrige le solde de ton compte</a> (« Solde au » aujourd’hui).</p>
         {r.proratedFrom && <p className="mt-1">Budget compté à partir de ton premier jour ({new Date(r.proratedFrom).toLocaleDateString('fr-FR', { timeZone: 'UTC' })}).</p>}
       </details>
     </section>
