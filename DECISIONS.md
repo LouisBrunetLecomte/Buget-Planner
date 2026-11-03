@@ -241,3 +241,10 @@ Pour un compte dont le solde a été saisi à une date :
 ## D46. Analyses sans historique inventé
 - **Courbe de solde** : historique par fin de période (de paie à paie), à partir du premier jour dans l'app (date du solde saisi), plus 12 mois de solde plat inventé. Les graphiques « Revenus et dépenses » partent eux aussi de la première période.
 - **Peu de données** : sans paiements cochés ou importés, les graphiques expliquent comment ils se remplissent au lieu d'afficher des zéros. La comparaison avec l'année précédente n'apparaît que si elle a des données.
+
+## D47. Minimalisme
+- **Accueil** : il répond à une seule question, « combien il me reste jusqu'à la prochaine paie ». Il garde les cases à payer / à recevoir, ce qu'il reste par poste du budget, les seules alertes qui demandent d'agir et une ligne « prochaine étape ».
+- **Retirés de l'accueil** : solde total, taux d'épargne, score de santé, faits marquants, rappels déjà visibles dans la liste. Ces informations restent dans Analyses, Comptes et Réglages.
+- **Navigation** : Accueil, Budget, Opérations ; le reste dans « Plus », sur mobile aussi. Le thème se règle dans les Réglages.
+- **Budget** : une ligne de résumé (reçu, payé, revenus sans affectation) remplace 5 cartes. Le 50/30/20 et l'ajout d'une catégorie existante disparaissent (« Nouveau libellé » réutilise une catégorie du même nom).
+- **Opérations** : seule la recherche est visible, les autres filtres sont derrière « Filtres ».

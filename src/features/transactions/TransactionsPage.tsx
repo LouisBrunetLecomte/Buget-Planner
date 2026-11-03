@@ -101,7 +101,7 @@ export function TransactionsPage() {
   const { label: catLabel } = useCategories()
   const [q, setQ] = useState(''), [accountId, setAccountId] = useState<string | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null), [month, setMonth] = useState('')
-  const [onlyUncat, setOnlyUncat] = useState(false), [scope, setScope] = useState<'all' | 'pro' | 'perso'>('all')
+  const [onlyUncat, setOnlyUncat] = useState(false), [scope, setScope] = useState<'all' | 'pro' | 'perso'>('all'), [showFilters, setShowFilters] = useState(false)
   const freelance = isFreelance(db)
   const [selected, setSelected] = useState<Set<string>>(new Set()), [editing, setEditing] = useState<repo.Tx | null>(null)
 
@@ -126,18 +126,24 @@ export function TransactionsPage() {
       <PageHeader title="Opérations" />
       <QuickAdd />
       <TransferSuggestions />
-      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-[1fr_12rem_14rem_10rem_auto]">
-        <Input className="col-span-2 md:col-span-1" type="search" aria-label="Rechercher" placeholder="Rechercher (libellé, note, montant)…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <AccountSelect value={accountId} onChange={setAccountId} allLabel="Tous les comptes" />
-        <CategorySelect value={categoryId} onChange={setCategoryId} allowNone={false} placeholder="Toutes catégories" />
-        <Input type="month" aria-label="Mois" value={month} onChange={(e) => setMonth(e.target.value)} />
-        <label className="col-span-2 flex items-center gap-2 text-sm md:col-span-1"><Checkbox checked={onlyUncat} onCheckedChange={(v) => setOnlyUncat(v === true)} />Non catégorisées</label>
-        {freelance && (
-          <div className="col-span-2 flex gap-1 md:col-span-5" role="group" aria-label="Pro ou perso">
-            {(['all', 'perso', 'pro'] as const).map((k) => <Button key={k} size="xs" variant={scope === k ? 'default' : 'outline'} aria-pressed={scope === k} onClick={() => setScope(k)}>{{ all: 'Tout', perso: 'Perso', pro: 'Pro' }[k]}</Button>)}
-          </div>
-        )}
+      {/* recherche toujours visible ; les autres filtres seulement sur demande */}
+      <div className="mb-3 flex gap-2">
+        <Input type="search" aria-label="Rechercher" placeholder="Rechercher (libellé, note, montant)…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Button variant={showFilters || accountId || categoryId || month || onlyUncat ? 'secondary' : 'outline'} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>Filtres</Button>
       </div>
+      {showFilters && (
+        <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-[12rem_14rem_10rem_auto]">
+          <AccountSelect value={accountId} onChange={setAccountId} allLabel="Tous les comptes" />
+          <CategorySelect value={categoryId} onChange={setCategoryId} allowNone={false} placeholder="Toutes catégories" />
+          <Input type="month" aria-label="Mois" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <label className="col-span-2 flex items-center gap-2 text-sm md:col-span-1"><Checkbox checked={onlyUncat} onCheckedChange={(v) => setOnlyUncat(v === true)} />Non catégorisées</label>
+          {freelance && (
+            <div className="col-span-2 flex gap-1 md:col-span-4" role="group" aria-label="Pro ou perso">
+              {(['all', 'perso', 'pro'] as const).map((k) => <Button key={k} size="xs" variant={scope === k ? 'default' : 'outline'} aria-pressed={scope === k} onClick={() => setScope(k)}>{{ all: 'Tout', perso: 'Perso', pro: 'Pro' }[k]}</Button>)}
+            </div>
+          )}
+        </div>
+      )}
       {(categoryId || accountId || month || q || onlyUncat) && (
         <Button variant="link" size="sm" className="mb-2 px-0" onClick={() => { setQ(''); setAccountId(null); setCategoryId(null); setMonth(''); setOnlyUncat(false) }}>Effacer les filtres</Button>
       )}

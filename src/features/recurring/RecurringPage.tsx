@@ -145,7 +145,7 @@ export function RecurringPage() {
   const sorted = [...st].sort((x, y) => Number(y.r.active) - Number(x.r.active) || (x.next ?? '9').localeCompare(y.next ?? '9'))
   return (
     <>
-      <PageHeader title="Charges fixes et revenus récurrents"><Button onClick={() => setEditing({})}>Ajouter</Button></PageHeader>
+      <PageHeader title="Salaire et charges fixes"><Button onClick={() => setEditing({})}>Ajouter</Button></PageHeader>
       <Summary st={st} />
       <Tabs defaultValue="list">
         <TabsList className="mb-3"><TabsTrigger value="list">Échéances</TabsTrigger><TabsTrigger value="cal">Calendrier</TabsTrigger><TabsTrigger value="detect">Détection</TabsTrigger></TabsList>

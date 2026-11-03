@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, type ComponentType } from 'react'
-import { ChevronDown, Eye, EyeOff, Lock, Moon, Sun, Undo2 } from 'lucide-react'
-import { useTheme } from '@/app/theme'
+import { ChevronDown, Eye, EyeOff, Lock, Undo2 } from 'lucide-react'
+import '@/app/theme'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -19,14 +19,14 @@ import { BudgetPage } from '@/features/budget/BudgetPage'
 const named = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })))
 const PAGES: Record<string, [string, ComponentType, 'main' | 'more']> = {
   accueil: ['Accueil', HomePage, 'main'],
-  operations: ['Opérations', TransactionsPage, 'main'],
   budget: ['Budget', BudgetPage, 'main'],
-  recurrences: ['Récurrences', named(() => import('@/features/recurring/RecurringPage'), 'RecurringPage'), 'main'],
-  analyses: ['Analyses', named(() => import('@/features/analyses/AnalysesPage'), 'AnalysesPage'), 'main'],
-  patrimoine: ['Patrimoine', named(() => import('@/features/patrimoine/PatrimoinePage'), 'PatrimoinePage'), 'main'],
-  simulations: ['Simulations', named(() => import('@/features/simulations/SimulationsPage'), 'SimulationsPage'), 'main'],
+  operations: ['Opérations', TransactionsPage, 'main'],
+  recurrences: ['Salaire et charges fixes', named(() => import('@/features/recurring/RecurringPage'), 'RecurringPage'), 'more'],
   comptes: ['Comptes', named(() => import('@/features/accounts/AccountsPage'), 'AccountsPage'), 'more'],
-  import: ['Import', named(() => import('@/features/import/ImportPage'), 'ImportPage'), 'more'],
+  analyses: ['Analyses', named(() => import('@/features/analyses/AnalysesPage'), 'AnalysesPage'), 'more'],
+  patrimoine: ['Épargne et crédits', named(() => import('@/features/patrimoine/PatrimoinePage'), 'PatrimoinePage'), 'more'],
+  simulations: ['Simulations', named(() => import('@/features/simulations/SimulationsPage'), 'SimulationsPage'), 'more'],
+  import: ['Importer un relevé', named(() => import('@/features/import/ImportPage'), 'ImportPage'), 'more'],
   categories: ['Catégories et règles', named(() => import('@/features/categories/CategoriesPage'), 'CategoriesPage'), 'more'],
   rapports: ['Rapports et exports', named(() => import('@/features/reports/ReportsPage'), 'ReportsPage'), 'more'],
   assistant: ['Assistant', named(() => import('@/features/assistant/AssistantPage'), 'AssistantPage'), 'more'],
@@ -47,7 +47,6 @@ function useAutoLock() {
 
 function Shell() {
   const route = useRoute()
-  const { resolvedTheme, setTheme } = useTheme()
   const s = useStore()
   useAutoLock()
   useAlertNotifications()
@@ -87,7 +86,6 @@ function Shell() {
             {s.status === 'open' && s.saveError && <span role="alert" className="text-xs text-destructive">Échec de sauvegarde : {s.saveError}</span>}
             <Button variant="ghost" size="icon" aria-label={last ? `Annuler : ${last.label}` : 'Rien à annuler'} title={last ? `Annuler : ${last.label} (⌘Z)` : undefined} disabled={!last} onClick={doUndo}><Undo2 /></Button>
             <Button variant="ghost" size="icon" aria-label={hidden ? 'Afficher les montants' : 'Masquer les montants'} aria-pressed={hidden} onClick={togglePrivacy}>{hidden ? <EyeOff /> : <Eye />}</Button>
-            <Button variant="ghost" size="icon" aria-label="Changer de thème" onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>{resolvedTheme === 'dark' ? <Sun /> : <Moon />}</Button>
             <Button variant="ghost" size="icon" aria-label="Verrouiller" onClick={lock}><Lock /></Button>
           </div>
         </div>
@@ -96,10 +94,16 @@ function Shell() {
         <Suspense fallback={<p className="text-sm text-muted-foreground">Chargement…</p>}><Page key={String(hidden)} /></Suspense>
         <Tutorial />
       </main>
-      <nav aria-label="Navigation mobile" className="fixed inset-x-0 bottom-0 z-20 flex overflow-x-auto border-t bg-background lg:hidden">
-        {entries.map(([k, [label]]) => (
-          <a key={k} href={`#/${k}`} aria-current={route === k ? 'page' : undefined} className={cn('shrink-0 grow px-3 py-3 text-center text-xs', route === k ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{label}</a>
+      <nav aria-label="Navigation mobile" className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t bg-background lg:hidden">
+        {entries.filter(([, [, , g]]) => g === 'main').map(([k, [label]]) => (
+          <a key={k} href={`#/${k}`} aria-current={route === k ? 'page' : undefined} className={cn('py-3 text-center text-xs', route === k ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{label}</a>
         ))}
+        <DropdownMenu>
+          <DropdownMenuTrigger className={cn('py-3 text-center text-xs', PAGES[route]?.[2] === 'more' ? 'font-semibold text-foreground' : 'text-muted-foreground')}>Plus</DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="top">
+            {entries.filter(([, [, , g]]) => g === 'more').map(([k, [label]]) => <DropdownMenuItem key={k} asChild><a href={`#/${k}`}>{label}</a></DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </nav>
     </div>
   )

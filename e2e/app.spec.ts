@@ -16,7 +16,7 @@ const nav = (page: Page, route: string) => page.evaluate((r) => { location.hash 
 
 test('création, verrouillage, mauvais mot de passe, persistance', async ({ page }) => {
   await createVault(page)
-  await expect(page.getByText('Solde total')).toBeVisible()
+  await expect(page.getByText('Il te reste')).toBeVisible()
   await page.getByRole('button', { name: 'Verrouiller' }).click()
   await page.getByLabel('Mot de passe').fill('pas-le-bon')
   await page.getByRole('button', { name: 'Déverrouiller' }).click()
@@ -146,7 +146,11 @@ test('le loyer saisi une fois, modifié dans le Budget, change partout', async (
 test('salaire le 12 : le budget va du 12 au 11 du mois suivant', async ({ page }) => {
   await createVault(page, false)
   const dlg = page.getByRole('dialog')
-  for (let i = 0; i < 3; i++) await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByRole('button', { name: 'Suivant' }).click()
+  await dlg.getByLabel('Nom').fill('LCL')
+  await dlg.getByLabel('Solde actuel (€)').fill('1000')
+  await dlg.getByRole('button', { name: 'Ajouter ce compte' }).click()
+  for (let i = 0; i < 2; i++) await dlg.getByRole('button', { name: 'Suivant' }).click()
   await dlg.getByLabel('Ton salaire net (€)').fill('2100')
   await dlg.getByLabel('Il arrive').click()
   await page.getByRole('option', { name: 'le 12', exact: true }).click()
@@ -154,7 +158,8 @@ test('salaire le 12 : le budget va du 12 au 11 du mois suivant', async ({ page }
   await dlg.getByRole('button', { name: 'Passer le tutoriel' }).click()
   await nav(page, 'budget')
   await expect(page.getByText(/^12 \S+ → 11 \S+ \d{4}$/).first()).toBeVisible()
-  await expect(page.getByText(/Reste à vivre jusqu’à ta prochaine paie/)).toBeVisible()
+  await nav(page, 'accueil')
+  await expect(page.getByText(/par jour · paie \S+ 12 /)).toBeVisible()
 })
 
 test('cocher « reçu » / « payé » fait avancer le budget et le solde', async ({ page }) => {

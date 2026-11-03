@@ -1,201 +1,164 @@
 import { useMemo } from 'react'
-import { AlertTriangle, Info, OctagonAlert, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, OctagonAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { addDays, addMonths, daysBetween, today } from '@/core/dates'
-import { insights, type Severity } from '@/core/analytics'
+import { Checkbox } from '@/components/ui/checkbox'
+import { addDays, daysBetween, today } from '@/core/dates'
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import * as an from '@/db/analyticsRepo'
-import { mutate, useDb } from '@/app/store'
 import { getSetting, putSetting } from '@/db/repo'
-import { attempt, Empty, Money, PageHeader, useAccounts, useCategories } from '@/app/ui'
-import { Checkbox } from '@/components/ui/checkbox'
-import { ResteAVivre } from '@/features/budget/BudgetPage'
+import { mutate, useDb } from '@/app/store'
+import { attempt, Empty, useAccounts, useCategories } from '@/app/ui'
 import { cn } from '@/lib/utils'
 
-const SEV: Record<Severity, { icon: typeof Info; cls: string; label: string }> = {
-  critique: { icon: OctagonAlert, cls: 'text-[var(--viz-critical)]', label: 'Critique' },
-  attention: { icon: AlertTriangle, cls: 'text-amber-600 dark:text-amber-400', label: 'Attention' },
-  info: { icon: Info, cls: 'text-muted-foreground', label: 'Info' },
+const fmtDay = (d: string) => new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+const Section = ({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) => (
+  <section className={cn('rounded-2xl border bg-card p-5', className)}><h2 className="mb-3 text-sm font-medium text-muted-foreground">{title}</h2>{children}</section>
+)
+
+/** La seule question de l'accueil : combien il me reste jusqu'à la prochaine paie. */
+function Remaining() {
+  const { db, version } = useDb()
+  const r = useMemo(() => {
+    const x = b.resteAVivreFor(db, today())
+    return { ...x, payday: addDays(x.end, 1) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version])
+  const lines: [string, number][] = [['Sur tes comptes courants', r.liquid], ['À recevoir', r.incoming], ['Charges à payer', -r.dated], ['Budget encore à dépenser', -r.envelopes]]
+  return (
+    <section className="rounded-2xl border bg-card px-5 py-8 text-center">
+      <p className="text-sm text-muted-foreground">Il te reste</p>
+      <p className={cn('my-1 text-5xl font-semibold tracking-tight', r.amount < 0 && 'text-destructive')}>{formatMoney(r.amount)}</p>
+      <p className="text-sm text-muted-foreground">
+        {formatMoney(Math.max(0, r.perDay))} par jour · {r.day > 1 ? 'paie' : 'nouveau mois'} {fmtDay(r.payday)}
+      </p>
+      <details className="mx-auto mt-4 max-w-xs text-left text-xs text-muted-foreground">
+        <summary className="cursor-pointer text-center">Comment c’est calculé</summary>
+        <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
+          {lines.map(([l, v], i) => [<dt key={l}>{l}</dt>, <dd key={l + 'v'} className="text-right">{i > 0 && v >= 0 ? '+' : ''}{formatMoney(v)}</dd>])}
+        </dl>
+        {r.proratedFrom && <p className="mt-1">Budget compté à partir de ton premier jour ({new Date(r.proratedFrom).toLocaleDateString('fr-FR', { timeZone: 'UTC' })}).</p>}
+      </details>
+    </section>
+  )
 }
 
+/** À payer / à recevoir d'ici la paie (retards compris) : on coche, tout se met à jour. */
+function Due() {
+  const { db, version } = useDb()
+  const occ = useMemo(() => {
+    const { start, end } = b.periodBounds(db, b.currentPeriod(db, today()))
+    return b.occurrencesBetween(db, start, end).filter((o) => !o.paid)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version])
+  return (
+    <Section title="À payer et à recevoir">
+      {!occ.length ? <p className="text-sm text-muted-foreground">Tout est réglé d’ici ta prochaine paie.</p> : (
+        <ul className="grid gap-2 text-sm">
+          {occ.map((o) => {
+            const n = daysBetween(today(), o.date), verb = o.recurring.amount > 0 ? 'reçu' : 'payé'
+            return (
+              <li key={o.recurring.id + o.date} className="flex items-center justify-between gap-3">
+                <label className="flex min-w-0 items-center gap-2.5">
+                  <Checkbox aria-label={`${o.recurring.name} ${verb}`} onCheckedChange={(v) => v === true && attempt(() => mutate((d) => b.tickOccurrence(d, o.recurring.id, o.date, today()), { label: `${o.recurring.name} ${verb}` }), `${o.recurring.name} : ${verb}`)} />
+                  <span className="truncate">{o.recurring.name}</span>
+                  <span className={cn('shrink-0 text-xs', n < 0 ? 'text-destructive' : 'text-muted-foreground')}>{n < 0 ? 'en retard' : n === 0 ? 'aujourd’hui' : n === 1 ? 'demain' : `dans ${n} j`}</span>
+                </label>
+                <span className={cn('tabular-nums', o.recurring.amount > 0 && 'text-emerald-700 dark:text-emerald-400')}>{o.recurring.amount > 0 ? '+' : ''}{formatMoney(o.recurring.amount)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Section>
+  )
+}
+
+/** Ce qu'il reste dans chaque poste du budget (courses, sorties…), le plus gros en haut. */
+function Envelopes() {
+  const { db, version } = useDb()
+  const { label } = useCategories()
+  const rows = useMemo(() => {
+    const cur = b.currentPeriod(db, today())
+    return b.getBudget(db, cur, cur)[0]!.rows.filter((r) => r.kind === 'depense' && !(r.items.length && !r.exception)).sort((x, y) => y.planned + y.carry - (x.planned + x.carry))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version])
+  if (!rows.length) return null
+  return (
+    <Section title="Ce qu’il reste par poste">
+      <ul className="grid gap-3 text-sm">
+        {rows.map((r) => {
+          const avail = r.planned + r.carry, left = avail - r.actual, pct = avail > 0 ? Math.min(1, r.actual / avail) : 1
+          return (
+            <li key={r.categoryId}>
+              <div className="flex justify-between gap-2"><span className="truncate">{label(r.categoryId)}</span><span className={cn('tabular-nums', left < 0 && 'text-destructive')}>{left < 0 ? `dépassé de ${formatMoney(-left)}` : formatMoney(left)}</span></div>
+              <div className="mt-1 h-1 rounded-full bg-muted"><div className={cn('h-full rounded-full', left < 0 ? 'bg-[var(--viz-critical)]' : 'bg-[var(--viz-1)]')} style={{ width: `${pct * 100}%` }} /></div>
+            </li>
+          )
+        })}
+      </ul>
+    </Section>
+  )
+}
+
+/** Seulement ce qui demande d'agir (découvert, dépassement, salaire pas reçu, doublon) ; les simples rappels sont déjà dans la liste. */
 function Alerts() {
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const list = useMemo(() => an.alerts(db, today()), [db, version])
-  return (
-    <Card className="lg:col-span-2">
-      <CardHeader><CardTitle>Alertes</CardTitle></CardHeader>
-      <CardContent>
-        {!list.length ? <p className="text-sm text-muted-foreground">Rien à signaler.</p> : (
-          <ul className="grid gap-2">
-            {list.map((a) => {
-              const S = SEV[a.severity]
-              return (
-                <li key={a.id} className="flex items-start gap-2 rounded-md border p-2 text-sm">
-                  <S.icon className={cn('mt-0.5 size-4 shrink-0', S.cls)} aria-label={S.label} />
-                  <a href={a.href} className="min-w-0 flex-1 hover:underline"><span className="font-medium">{a.title}</span><span className="block text-xs text-muted-foreground">{a.body}</span></a>
-                  <Button size="icon-xs" variant="ghost" aria-label={`Masquer l’alerte ${a.title}`} onClick={() => mutate((d) => an.dismissAlert(d, a.id))}><X /></Button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function Upcoming() {
-  const { db, version } = useDb()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const occ = useMemo(() => b.occurrencesBetween(db, b.periodBounds(db, b.currentPeriod(db, today())).start, addDays(today(), 14)).filter((o) => !o.paid), [db, version])
-  return (
-    <Card>
-      <CardHeader><CardTitle>À payer / à recevoir</CardTitle><CardDescription>Coche quand c’est fait</CardDescription></CardHeader>
-      <CardContent>
-        {!occ.length ? <p className="text-sm text-muted-foreground">Aucune échéance suivie. <a className="underline" href="#/recurrences">Détecter mes charges fixes</a></p> : (
-          <ul className="grid gap-1 text-sm">
-            {occ.map((o) => {
-              const n = daysBetween(today(), o.date)
-              return (
-                <li key={o.recurring.id + o.date} className="flex items-center justify-between gap-2">
-                  <label className="flex min-w-0 items-center gap-2">
-                    <Checkbox aria-label={`${o.recurring.name} ${o.recurring.amount > 0 ? 'reçu' : 'payé'}`} onCheckedChange={(v) => v === true && attempt(() => mutate((d) => b.tickOccurrence(d, o.recurring.id, o.date, today()), { label: `${o.recurring.name} ${o.recurring.amount > 0 ? 'reçu' : 'payé'}` }), `${o.recurring.name} : ${o.recurring.amount > 0 ? 'reçu' : 'payé'}`)} />
-                    <span className="truncate">{o.recurring.name} <span className="text-xs text-muted-foreground">{n < 0 ? `en retard (${-n} j)` : n === 0 ? 'aujourd’hui' : n === 1 ? 'demain' : `dans ${n} j`}</span></span>
-                  </label>
-                  <Money cents={o.recurring.amount} />
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function Health() {
-  const { db, version } = useDb()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const h = useMemo(() => an.health(db, today()), [db, version])
-  if (!h.enough) return (
-    <Card>
-      <CardHeader><CardDescription>Score de santé financière</CardDescription><CardTitle className="text-xl">Bientôt</CardTitle>
-        <CardDescription className="text-xs">Il sera calculé après ta première période complète (de paie à paie) avec un revenu reçu : coche ton salaire quand il arrive.</CardDescription></CardHeader>
-    </Card>
-  )
-  return (
-    <Card>
-      <CardHeader><CardDescription>Score de santé financière</CardDescription><CardTitle className="text-3xl">{h.score}<span className="text-base font-normal text-muted-foreground"> / 100</span></CardTitle></CardHeader>
-      <CardContent>
-        <ul className="grid gap-2 text-xs">
-          {h.parts.map((p) => (
-            <li key={p.label}>
-              <div className="flex justify-between"><span>{p.label}</span><span className="tabular-nums text-muted-foreground">{p.points}/{p.max}</span></div>
-              <div className="my-1 h-1.5 rounded-full bg-muted" role="meter" aria-valuenow={p.points} aria-valuemin={0} aria-valuemax={p.max} aria-label={p.label}>
-                <div className="h-full rounded-full" style={{ width: `${(p.points / p.max) * 100}%`, background: 'var(--viz-1)' }} />
-              </div>
-              <span className="text-muted-foreground">{p.hint}</span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  )
-}
-
-/** Premiers pas, puis rappel de sauvegarde (le mot de passe est irrécupérable : la sauvegarde est la seule assurance). */
-function Onboarding() {
-  const { db, version } = useDb()
-  const st = useMemo(() => {
-    const has = (sql: string) => (db as unknown as { $client: { exec: (s: string) => { values: unknown[][] }[] } }).$client.exec(sql)[0]?.values[0]?.[0] as number > 0
-    const lastBackup = getSetting<string>(db, 'lastBackup') ?? null
-    return {
-      steps: [
-        ['Créer tes comptes', has('select count(*) from account'), '#/comptes'],
-        ['Ajouter ton salaire et tes charges avec leur date', has('select count(*) from recurring'), '#/recurrences'],
-        ['Créer ton budget (courses, sorties…)', has('select count(*) from budget_line') || has('select count(*) from recurring where category_id is not null and kind = \'charge\''), '#/budget'],
-        ['Cocher un premier paiement, ou importer un relevé', has('select count(*) from "transaction"'), '#/budget'],
-        ['Télécharger une sauvegarde chiffrée', !!lastBackup, '#/reglages'],
-      ] as [string, boolean, string][],
-      stale: !lastBackup || daysBetween(lastBackup, today()) > 30, lastBackup,
-      dismissed: getSetting<boolean>(db, 'onboardingDone') ?? false,
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, version])
-  const done = st.steps.filter((x) => x[1]).length
-  if (done < st.steps.length && !st.dismissed) return (
-    <Card className="lg:col-span-3">
-      <CardHeader><CardTitle>Bien démarrer ({done}/{st.steps.length})</CardTitle></CardHeader>
-      <CardContent className="flex flex-wrap items-center gap-2">
-        {st.steps.map(([l, ok, href]) => <a key={l} href={href} className={cn('rounded-md border px-3 py-1.5 text-sm', ok ? 'text-muted-foreground line-through' : 'hover:bg-muted')}>{ok ? '✓ ' : ''}{l}</a>)}
-        <Button size="sm" variant="ghost" onClick={() => mutate((d) => putSetting(d, 'onboardingDone', true), { undoable: false })}>Masquer</Button>
-      </CardContent>
-    </Card>
-  )
-  if (st.stale) return (
-    <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm lg:col-span-3 dark:border-amber-800 dark:bg-amber-950/40">
-      {st.lastBackup ? `Dernière sauvegarde le ${new Date(st.lastBackup).toLocaleDateString('fr-FR', { timeZone: 'UTC' })}.` : 'Aucune sauvegarde téléchargée.'} Si tu oublies ton mot de passe ou perds cet appareil, c’est la seule façon de retrouver tes données. <a className="font-medium underline" href="#/reglages">Sauvegarder maintenant</a>
-    </div>
-  )
-  return null
-}
-
-function Insights() {
-  const { db, version } = useDb()
-  const { label } = useCategories()
-  const list = useMemo(() => {
-    const cur = b.currentPeriod(db, today())
-    return insights(b.getBudget(db, addMonths(cur, -4), addMonths(cur, -1)), (id) => label(id) ?? '?')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, version, label])
+  const list = useMemo(() => an.alerts(db, today()).filter((a) => a.severity !== 'info').slice(0, 3), [db, version])
   if (!list.length) return null
   return (
-    <Card>
-      <CardHeader><CardTitle>Ce qu’il faut retenir</CardTitle></CardHeader>
-      <CardContent><ul className="grid list-disc gap-1 pl-4 text-sm">{list.map((s) => <li key={s}>{s}</li>)}</ul></CardContent>
-    </Card>
+    <ul className="grid gap-2">
+      {list.map((a) => {
+        const Icon = a.severity === 'critique' ? OctagonAlert : AlertTriangle
+        return (
+          <li key={a.id} className={cn('flex items-start gap-2.5 rounded-xl border p-3 text-sm', a.severity === 'critique' ? 'border-destructive/50' : 'border-amber-400/60')}>
+            <Icon className={cn('mt-0.5 size-4 shrink-0', a.severity === 'critique' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400')} aria-label={a.severity === 'critique' ? 'Critique' : 'Attention'} />
+            <a href={a.href} className="min-w-0 flex-1"><span className="font-medium">{a.title}</span><span className="block text-xs text-muted-foreground">{a.body}</span></a>
+            <Button size="icon-xs" variant="ghost" aria-label={`Masquer l’alerte ${a.title}`} onClick={() => mutate((d) => an.dismissAlert(d, a.id), { undoable: false })}><X /></Button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** Une seule ligne « prochaine étape » tant que l'essentiel n'est pas en place, puis le rappel de sauvegarde. */
+function NextStep() {
+  const { db, version } = useDb()
+  const step = useMemo(() => {
+    const has = (q: string) => ((db as unknown as { $client: { exec: (s: string) => { values: unknown[][] }[] } }).$client.exec(q)[0]?.values[0]?.[0] as number) > 0
+    const lastBackup = getSetting<string>(db, 'lastBackup')
+    const todo: [string, string][] = [
+      ...(!has('select count(*) from recurring') ? [['Ajoute ton salaire et tes charges avec leur date', '#/recurrences'] as [string, string]] : []),
+      ...(!has('select count(*) from budget_line') ? [['Ajoute ton budget : courses, sorties…', '#/budget'] as [string, string]] : []),
+      ...(!lastBackup || daysBetween(lastBackup, today()) > 30 ? [['Télécharge une sauvegarde chiffrée de tes données', '#/reglages'] as [string, string]] : []),
+    ]
+    return todo[0] ?? null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version])
+  if (!step || getSetting<boolean>(db, 'onboardingDone')) return null
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-sm">
+      <a href={step[1]} className="flex flex-1 items-center gap-1"><span className="text-muted-foreground">Prochaine étape :</span> {step[0]} <ChevronRight className="size-4" /></a>
+      <Button size="xs" variant="ghost" onClick={() => mutate((d) => putSetting(d, 'onboardingDone', true), { undoable: false })}>Plus tard</Button>
+    </div>
   )
 }
 
 export function HomePage() {
-  const { db, version } = useDb()
   const accounts = useAccounts()
-  const k = useMemo(() => {
-    const cur = b.currentPeriod(db, today())
-    const m = b.getBudget(db, cur, cur)[0]!
-    const h = an.health(db, today())
-    return { total: b.totalBalance(db), m, rate: h.rate, enough: h.enough }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, version])
-  if (!accounts.length) return <><PageHeader title="Accueil" /><Empty>Bienvenue ! Commence par <a className="underline" href="#/comptes">créer un compte</a>, puis <a className="underline" href="#/import">importe un relevé</a>.</Empty></>
-  const spentPct = k.m.plannedExpense ? k.m.actualExpense / k.m.plannedExpense : 0
+  if (!accounts.length) return <Empty>Bienvenue ! Commence par <a className="underline" href="#/comptes">ajouter ton compte</a> avec son solde actuel.</Empty>
   return (
-    <>
-      <PageHeader title="Accueil" />
-      <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <Card size="sm" className="col-span-2 lg:col-span-1"><CardHeader><CardDescription>Solde total (tous comptes)</CardDescription><CardTitle className="text-3xl font-semibold"><Money cents={k.total} colored={false} /></CardTitle><CardDescription className="text-xs">{((n) => `${n} compte${n > 1 ? 's' : ''} actif${n > 1 ? 's' : ''}`)(accounts.filter((a) => !a.archived).length)}</CardDescription></CardHeader></Card>
-        <div className="col-span-2 lg:col-span-1"><ResteAVivre /></div>
-        <Card size="sm"><CardHeader><CardDescription>Dépensé sur la période</CardDescription>
-          <CardTitle className="text-xl"><Money cents={k.m.actualExpense} colored={false} /></CardTitle>
-          {k.m.plannedExpense > 0 ? <>
-            <div className="h-1.5 rounded-full bg-muted" role="meter" aria-valuenow={Math.round(spentPct * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Budget consommé">
-              <div className={cn('h-full rounded-full', spentPct > 1 ? 'bg-[var(--viz-critical)]' : 'bg-[var(--viz-1)]')} style={{ width: `${Math.min(100, spentPct * 100)}%` }} />
-            </div>
-            <CardDescription className="text-xs">sur {formatMoney(k.m.plannedExpense)} prévus</CardDescription>
-          </> : <CardDescription className="text-xs"><a className="underline" href="#/budget">Créer un budget</a></CardDescription>}
-        </CardHeader></Card>
-        <Card size="sm"><CardHeader><CardDescription>Taux d’épargne</CardDescription><CardTitle className="text-xl">{k.enough ? `${Math.round(k.rate * 100)} %` : '—'}</CardTitle><CardDescription className="text-xs">{k.enough ? '3 dernières périodes complètes' : 'après ta première paie complète'}</CardDescription></CardHeader></Card>
+    <div className="mx-auto grid max-w-3xl gap-4">
+      <h1 className="sr-only">Accueil</h1>
+      <Remaining />
+      <Alerts />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Due />
+        <Envelopes />
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Onboarding />
-        <Alerts />
-        <Upcoming />
-        <Health />
-        <Insights />
-      </div>
-    </>
+      <NextStep />
+    </div>
   )
 }

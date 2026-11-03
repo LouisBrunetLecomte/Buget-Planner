@@ -1,17 +1,16 @@
-import { Fragment, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { addMonths, daysInMonth, monthsBetween, today } from '@/core/dates'
 import { projectBalances, type MonthBudget, type Row } from '@/core/budget'
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
-import { attempt, CategorySelect, DaySelect, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { attempt, DaySelect, Empty, Money, PageHeader, useCategories } from '@/app/ui'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -30,50 +29,17 @@ function Bar({ value, max, income }: { value: number; max: number; income?: bool
   )
 }
 
-export function ResteAVivre() {
-  const { db, version } = useDb()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const r = useMemo(() => b.resteAVivreFor(db, today()), [db, version])
-  const until = r.day > 1 ? 'ta prochaine paie' : 'la fin du mois'
-  const lines: [string, number][] = [['Sur tes comptes courants', r.liquid], ['À recevoir', r.incoming], ['Charges à payer', -r.dated], [r.proratedFrom ? `Budget pas encore dépensé (au prorata depuis le ${fmtDay(r.proratedFrom)}, ton premier jour)` : 'Budget pas encore dépensé', -r.envelopes]]
-  return (
-    <Card size="sm" className={cn(r.amount < 0 && 'border-destructive')}>
-      <CardHeader>
-        <CardDescription>Reste à vivre jusqu’à {until}</CardDescription>
-        <CardTitle className="text-2xl"><Money cents={r.perDay} colored={false} /> <span className="text-sm font-normal text-muted-foreground">/ jour pendant {r.daysLeft} j</span></CardTitle>
-        <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">{formatMoney(r.amount)} libres d’ici {until}</summary>
-          <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 tabular-nums">
-            {lines.map(([l, v], i) => <Fragment key={l}><dt>{l}</dt><dd className="text-right">{v >= 0 && i > 0 ? '+' : ''}{formatMoney(v)}</dd></Fragment>)}
-            <dt className="border-t pt-0.5 font-medium text-foreground">Libre</dt><dd className="border-t pt-0.5 text-right font-medium text-foreground">{formatMoney(r.amount)}</dd>
-          </dl>
-          <p className="mt-1">Ce qu’il te restera si tu respectes ton budget. Coche ce qui est payé ou reçu pour qu’il se mette à jour.</p>
-        </details>
-      </CardHeader>
-    </Card>
-  )
-}
 
+/** Une ligne : reçu, payé, et ce qui n'a pas encore de rôle dans le budget. */
 function Summary({ m }: { m: MonthBudget }) {
-  // mois passé : réel ; mois en cours ou futur : prévu (sinon tout ce qui n'est pas encore dépensé passerait pour de l'épargne)
-  const { db } = useDb()
-  const real = m.month < b.currentPeriod(db, today())
-  const income = real ? m.actualIncome : m.plannedIncome
-  const pct = (v: number) => (income > 0 ? Math.round((v / income) * 100) : 0)
-  const besoin = m.buckets.besoin[real ? 'actual' : 'planned'], envie = m.buckets.envie[real ? 'actual' : 'planned']
-  const epargne = income - (real ? m.actualExpense : m.plannedExpense)
   return (
-    <>
-      <Card size="sm"><CardHeader><CardDescription>Revenus reçus</CardDescription><CardTitle className="text-xl"><Money cents={m.actualIncome} colored={false} /></CardTitle><CardDescription className="text-xs">prévu {formatMoney(m.plannedIncome)}</CardDescription></CardHeader></Card>
-      <Card size="sm"><CardHeader><CardDescription>Dépenses payées</CardDescription><CardTitle className="text-xl"><Money cents={m.actualExpense} colored={false} /></CardTitle><CardDescription className="text-xs">prévu {formatMoney(m.plannedExpense)}{m.unbudgetedExpense ? ` · ${formatMoney(m.unbudgetedExpense)} hors budget` : ''}</CardDescription></CardHeader></Card>
-      <Card size="sm" className={cn(m.toAssign < 0 && 'border-destructive')}>
-        <CardHeader><CardDescription>Reste à affecter (base zéro)</CardDescription><CardTitle className="text-xl"><Money cents={m.toAssign} colored={false} /></CardTitle>
-          <CardDescription className="text-xs">{!m.plannedIncome ? 'Aucun revenu prévu.' : m.toAssign === 0 ? 'Chaque euro a un rôle.' : m.toAssign > 0 ? 'Revenus prévus non budgétés : épargne ?' : 'Tu prévois de dépenser plus que tes revenus.'}</CardDescription></CardHeader>
-      </Card>
-      <Card size="sm"><CardHeader><CardDescription>50 / 30 / 20 ({real ? 'réel' : 'prévu'})</CardDescription>
-        <CardTitle className="text-xl tabular-nums">{pct(besoin)} / {pct(envie)} / {pct(epargne)}</CardTitle>
-        <CardDescription className="text-xs">besoins / envies / épargne, en % des revenus</CardDescription></CardHeader></Card>
-    </>
+    <p className="mb-4 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+      <span>Reçu <strong className="font-medium text-foreground tabular-nums">{formatMoney(m.actualIncome)}</strong> / {formatMoney(m.plannedIncome)}</span>
+      <span>Payé <strong className="font-medium text-foreground tabular-nums">{formatMoney(m.actualExpense)}</strong> / {formatMoney(m.plannedExpense)}</span>
+      {m.plannedIncome > 0 && m.toAssign !== 0 && (
+        <span className={cn(m.toAssign < 0 && 'text-destructive')}>{m.toAssign > 0 ? `${formatMoney(m.toAssign)} de revenus sans affectation` : `Budget supérieur aux revenus de ${formatMoney(-m.toAssign)}`}</span>
+      )}
+    </p>
   )
 }
 
@@ -192,7 +158,6 @@ function MonthView({ month }: { month: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version, month])
   const [edit, setEdit] = useState<{ categoryId: string; row: Row | null } | null>(null)
-  const isCurrent = month === b.currentPeriod(db, today())
   const size = (r: Row) => Math.max(r.planned + r.carry, r.actual)
   const groups = (['revenu', 'depense'] as const).map((k) => ({ k, rows: m.rows.filter((r) => r.kind === k).sort((a, b) => size(b) - size(a)) }))
 
@@ -205,10 +170,7 @@ function MonthView({ month }: { month: string }) {
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
-        {isCurrent && <div className="col-span-2 lg:col-span-1"><ResteAVivre /></div>}
-        <Summary m={m} />
-      </div>
+      <Summary m={m} />
       {m.rows.length === 0 ? (
         <Empty>
           Aucun budget pour {b.periodBounds(db, month).label}.
@@ -225,9 +187,6 @@ function MonthView({ month }: { month: string }) {
       ))}
       {m.unbudgetedExpense > 0 && <p className="mb-4 text-sm text-muted-foreground">Dépenses hors budget ce mois : <Money cents={m.unbudgetedExpense} colored={false} /> (catégories sans ligne de budget, ou non catégorisées).</p>}
       <NewLine key={month} month={month} />
-      <div className="mt-2 flex max-w-sm items-center gap-2">
-        <CategorySelect value={null} allowNone={false} placeholder="… ou ajouter une catégorie existante" onChange={(c) => c && setEdit({ categoryId: c, row: m.rows.find((r) => r.categoryId === c) ?? null })} />
-      </div>
       {edit && <BudgetDialog {...edit} month={month} onClose={() => setEdit(null)} />}
     </>
   )
