@@ -59,7 +59,7 @@ export function Tutorial() {
   )
   const steps: { title: string; body: React.ReactNode }[] = [
     {
-      title: 'Bienvenue dans Buget 👋',
+      title: 'Bienvenue dans Budget 👋',
       body: (
         <ul className="grid gap-3 text-sm">
           <li className="flex gap-3"><Lock className="mt-0.5 size-5 shrink-0 text-primary" />{syncEnabled() ? 'Tes données sont chiffrées avec ton mot de passe avant d’être synchronisées sur ton compte Quansi : personne d’autre ne peut les lire.' : 'Tes données restent sur cet appareil, chiffrées avec ton mot de passe. Rien n’est envoyé sur Internet.'}</li>
@@ -92,7 +92,7 @@ export function Tutorial() {
       title: '2. Ton Journal',
       body: (
         <div className="grid gap-3 text-sm">
-          <p className="text-muted-foreground">Deux façons de remplir Buget, que tu peux mélanger :</p>
+          <p className="text-muted-foreground">Deux façons de remplir Budget, que tu peux mélanger :</p>
           <button type="button" onClick={() => setThen('#/import')} className={`rounded-md border p-3 text-left ${then === '#/import' ? 'border-primary' : ''}`}>
             <span className="font-medium">Importer un relevé</span> (recommandé)<span className="block text-xs text-muted-foreground">Dans ton espace bancaire, exporte tes opérations en CSV, OFX ou PDF, puis Plus → Import. Les doublons sont ignorés : tu peux réimporter sans risque.</span>
           </button>
@@ -116,10 +116,10 @@ export function Tutorial() {
       ),
     },
     {
-      title: '4. Ce que Buget surveille pour toi',
+      title: '4. Ce que Budget surveille pour toi',
       body: (
         <ul className="grid list-disc gap-2 pl-5 text-sm text-muted-foreground">
-          <li>Après ton premier import, la page <strong>Salaire et charges fixes</strong> (menu Plus) repère loyer, abonnements, salaire… Un clic sur « Suivre » et Buget te prévient avant chaque prélèvement.</li>
+          <li>Après ton premier import, la page <strong>Salaire et charges fixes</strong> (menu Plus) repère loyer, abonnements, salaire… Un clic sur « Suivre » et Budget te prévient avant chaque prélèvement.</li>
           <li>L’<strong>Aperçu</strong> affiche ce qu’il te reste à vivre jusqu’à ta paie, par jour, les alertes (budget dépassé, solde bas, doublon…) et tes prochaines échéances.</li>
           <li>Les virements entre tes propres comptes sont repérés pour ne pas compter deux fois.</li>
         </ul>
@@ -130,7 +130,7 @@ export function Tutorial() {
       body: (
         <div className="grid gap-3 text-sm">
           <p>Ton mot de passe ne peut <strong>pas</strong> être récupéré. Si tu l’oublies ou changes d’ordinateur, seule une <strong>sauvegarde</strong> te permet de tout retrouver.</p>
-          <p className="text-muted-foreground">Le fichier est chiffré avec ton mot de passe ; range-le dans iCloud Drive ou sur une clé USB. Buget te le rappellera tous les 30 jours.</p>
+          <p className="text-muted-foreground">Le fichier est chiffré avec ton mot de passe ; range-le dans iCloud Drive ou sur une clé USB. Budget te le rappellera tous les 30 jours.</p>
           <Button variant="secondary" className="justify-self-start" onClick={() => void exportBackup().then((bl) => { download(bl, `buget-${today()}.json`, 'application/json'); mutate((d) => repo.putSetting(d, 'lastBackup', today()), { undoable: false }); toast.success('Sauvegarde téléchargée') })}>Télécharger une sauvegarde maintenant</Button>
         </div>
       ),

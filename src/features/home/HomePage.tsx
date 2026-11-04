@@ -24,7 +24,7 @@ const Section = ({ title, children, className }: { title: string; children: Reac
 )
 
 /**
- * Le solde vient de toi : Buget ne peut pas deviner ta banque. On l'affiche avec la date où tu l'as confirmé,
+ * Le solde vient de toi : Budget ne peut pas deviner ta banque. On l'affiche avec la date où tu l'as confirmé,
  * et on le corrige d'un geste. Ensuite, ce que tu coches ou saisis le fait évoluer.
  */
 function Balance() {

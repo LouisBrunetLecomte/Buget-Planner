@@ -10,7 +10,7 @@ async function createVault(page: Page, demo = true) {
   if (demo) await page.getByRole('checkbox', { name: /démonstration/ }).click()
   await page.getByRole('button', { name: 'Créer ma base' }).click()
   // base vierge : le tutoriel s'ouvre par-dessus l'accueil
-  await expect(demo ? page.getByRole('heading', { name: 'Aperçu' }) : page.getByRole('dialog').getByText('Bienvenue dans Buget')).toBeVisible({ timeout: 20_000 })
+  await expect(demo ? page.getByRole('heading', { name: 'Aperçu' }) : page.getByRole('dialog').getByText('Bienvenue dans Budget')).toBeVisible({ timeout: 20_000 })
 }
 const nav = (page: Page, route: string) => page.evaluate((r) => { location.hash = `/${r}` }, route) // sans rechargement (sinon l'app se reverrouille)
 
@@ -83,7 +83,7 @@ test('accessibilité (axe, WCAG AA) : aucune violation grave', async ({ page }) 
 test('base vierge : aucune donnée, tutoriel de première connexion', async ({ page }) => {
   await createVault(page, false)
   const dlg = page.getByRole('dialog')
-  await expect(dlg.getByText('Bienvenue dans Buget')).toBeVisible()
+  await expect(dlg.getByText('Bienvenue dans Budget')).toBeVisible()
   await expect(dlg.getByText('5 étapes, environ 2 minutes')).toBeVisible()
   await dlg.getByRole('button', { name: 'Suivant' }).click()
   await expect(dlg.getByText('Étape 1 sur 5')).toBeVisible() // même nombre que l'annonce

@@ -149,7 +149,7 @@ export function TransactionsPage() {
           <Button size="sm" onClick={() => {
             const n = mutate((d) => repo.applyRulesToUncategorized(d), { label: 'Classement automatique' })
             if (n) toast.success(`${n} opération${n > 1 ? 's' : ''} classée${n > 1 ? 's' : ''} d’après l’établissement. ⌘Z pour annuler.`)
-            else toast.info('Aucun établissement reconnu. Classe-les à la main : Buget retiendra pour les suivantes.')
+            else toast.info('Aucun établissement reconnu. Classe-les à la main : Budget retiendra pour les suivantes.')
           }}>Classer automatiquement</Button>
         </div>
       )}

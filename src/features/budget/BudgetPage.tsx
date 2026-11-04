@@ -301,7 +301,7 @@ function MonthView({ month }: { month: string }) {
             </tfoot>
           </table>
           {!rev.length && st && st >= d.start && st <= d.end && (
-            <p className="mt-4 text-sm text-muted-foreground">Aucun revenu sur cette période : tu as commencé Buget après ta dernière paie, elle est déjà comprise dans ton solde.</p>
+            <p className="mt-4 text-sm text-muted-foreground">Aucun revenu sur cette période : tu as commencé Budget après ta dernière paie, elle est déjà comprise dans ton solde.</p>
           )}
         </div>
       )}

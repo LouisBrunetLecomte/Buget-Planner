@@ -67,7 +67,7 @@ function Shell() {
     <div className="min-h-dvh pb-16 lg:pb-0">
       <header className="sticky top-0 z-20 border-b border-border/60 bg-background/72 backdrop-blur-xl backdrop-saturate-180">
         <div className="mx-auto flex h-12 max-w-5xl items-center gap-6 px-5">
-          <a href="#/accueil" className="text-[15px] font-semibold tracking-tight">Buget</a>
+          <a href="#/accueil" className="text-[15px] font-semibold tracking-tight">Budget</a>
           <nav aria-label="Navigation principale" className="hidden flex-1 items-center justify-center gap-7 text-[13px] lg:flex">
             {entries.filter(([, [, , g]]) => g === 'main').map(([k, [label]]) => (
               <a key={k} href={`#/${k}`} aria-current={route === k ? 'page' : undefined} className={cn('transition-colors hover:text-foreground', route === k ? 'text-foreground' : 'text-muted-foreground')}>{label}</a>

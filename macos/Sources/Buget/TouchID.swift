@@ -38,7 +38,7 @@ enum TouchID {
         let ctx = LAContext()
         ctx.localizedFallbackTitle = "Utiliser le mot de passe"
         ctx.localizedCancelTitle = "Annuler"
-        do { try await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "déverrouiller Buget") }
+        do { try await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "déverrouiller Budget") }
         catch let e as LAError where [.userCancel, .userFallback, .systemCancel, .appCancel].contains(e.code) { return nil }
         do {
             let enclave = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: s.enclaveKey, authenticationContext: ctx)

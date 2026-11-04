@@ -28,7 +28,7 @@ function BalanceForecast({ horizon }: { horizon: number }) {
   const neg = d.proj.find((p) => p.balance < 0)
   return (
     <Card>
-      <CardHeader><CardTitle>Solde total et prévision</CardTitle><CardDescription>Fin de période (de paie à paie), tous comptes, depuis ton premier jour dans Buget. Prévision : ce qui reste à payer et recevoir, puis le budget prévu.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Solde total et prévision</CardTitle><CardDescription>Fin de période (de paie à paie), tous comptes, depuis ton premier jour dans Budget. Prévision : ce qui reste à payer et recevoir, puis le budget prévu.</CardDescription></CardHeader>
       <CardContent>
         {neg && <p role="alert" className="mb-2 text-sm text-destructive">⚠ Découvert probable fin {ms(neg.month)} ({formatMoney(neg.balance)}), avant ta paie.</p>}
         <div className="mb-2 flex gap-4"><LegendItem color="var(--viz-1)" label="Réel" line /><LegendItem color="var(--viz-1)" label="Prévision" line dashed /></div>

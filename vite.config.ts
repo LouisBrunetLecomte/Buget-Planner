@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => ({
       registerType: 'prompt', // jamais de rechargement surprise : l'utilisateur choisit quand mettre à jour
       includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Buget', short_name: 'Buget', lang: 'fr', description: 'Budget personnel local et chiffré',
+        name: 'Budget', short_name: 'Budget', lang: 'fr', description: 'Budget personnel local et chiffré',
         start_url: '.', scope: '.', display: 'standalone', theme_color: '#1c1c1c', background_color: '#ffffff',
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },

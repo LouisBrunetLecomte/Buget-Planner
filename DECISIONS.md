@@ -151,7 +151,7 @@ Un petit module remplace next-themes, dont le script en ligne était incompatibl
 - Une nouvelle version est **proposée**, jamais imposée : rien n'est rechargé pendant une saisie, et la base est sauvegardée avant la mise à jour.
 - Les notifications ne partent que lorsque l'app est ouverte. Les envoyer app fermée demanderait un serveur de push, ce qui est contraire au principe local-first.
 
-## D35. App Mac « Buget »
+## D35. App Mac « Budget »
 - **Principe** : une enveloppe Swift (WebKit) plutôt qu'Electron, sur le modèle de Quansi+. Elle pèse quelques Mo au lieu de plus de 150 Mo et n'ajoute aucune dépendance.
 - **Pourquoi un mini serveur local** : le chiffrement (WebCrypto) et IndexedDB exigent un contexte sécurisé, que `file://` et un schéma personnalisé n'offrent pas, alors que `http://127.0.0.1` oui.
   - Le port est fixe (47219) : l'origine reste la même, donc les données aussi.
@@ -167,7 +167,7 @@ Un petit module remplace next-themes, dont le script en ligne était incompatibl
 - **Mécanisme** : le mot de passe est chiffré (AES-GCM) avec une clé issue d'un échange ECDH, dont la clé privée est générée et gardée dans la **Secure Enclave**.
   - Elle n'est utilisable qu'après une empreinte, sur ce Mac uniquement (`.biometryCurrentSet`).
   - Si les empreintes changent (ajout d'un doigt), elle est invalidée.
-  - Le fichier stocké (`~/Library/Application Support/Buget/touchid.json`, droits 600) est donc inexploitable sans empreinte.
+  - Le fichier stocké (`~/Library/Application Support/Budget/touchid.json`, droits 600) est donc inexploitable sans empreinte.
   - Pas de trousseau : le trousseau « protégé par biométrie » exige un compte développeur Apple, alors que la Secure Enclave via CryptoKit fonctionne avec la signature locale.
 - **Le mot de passe reste nécessaire en secours** : c'est lui qui chiffre la base, et sans lui un Mac fermé avec clavier externe, un doigt mouillé ou de nouvelles empreintes bloqueraient l'accès.
   - Touch ID se (ré)active automatiquement à la création de la base, au déverrouillage par mot de passe, au changement de mot de passe et à la restauration d'une sauvegarde.
@@ -255,7 +255,7 @@ Pour un compte dont le solde a été saisi à une date :
 - **Argent attendu** (revenu non coché) : affiché à part, jamais ajouté. Avant, il gonflait le chiffre principal, qui ne correspondait plus au compte.
 
 ## D49. Solde confirmé par l'utilisateur, prévisions sur l'accueil
-- **Pourquoi** : Buget ne peut pas deviner le solde bancaire. Un compte créé sans date de solde comptait une deuxième fois ce qui était déjà dans ce solde.
+- **Pourquoi** : Budget ne peut pas deviner le solde bancaire. Un compte créé sans date de solde comptait une deuxième fois ce qui était déjà dans ce solde.
 - **Correction** : on touche le montant sur l'accueil et on saisit ce qu'affiche la banque. `confirmBalance` fixe le solde à la date du jour et neutralise ce qui était déjà saisi ou coché ce jour-là. Ce qui vient ensuite compte, et ce qui est daté d'avant est considéré comme déjà compris. La date de confirmation est affichée, avec un rappel si elle manque ou date de plus de 7 jours.
 - **Prévisions** : le solde des comptes courants avant chaque paie sur 6 périodes. Un clic ouvre le budget de cette période (`#/budget?m=…`).
 - **Alertes de budget** : pas d'alerte quand une ligne est payée pile au prévu, seulement en cas de dépassement. L'accueil ne montre que le dépassement, le salaire pas reçu et les doublons. Le découvert y est déjà visible en rouge.

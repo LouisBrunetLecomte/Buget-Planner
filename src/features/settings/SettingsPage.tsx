@@ -58,7 +58,7 @@ function TouchIdCard() {
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><Fingerprint className="size-5" />Touch ID</CardTitle>
         <CardDescription>{!st.available ? 'Touch ID n’est pas disponible (aucune empreinte enregistrée, ou Mac fermé avec un clavier externe).'
-          : st.enrolled ? 'Activé : ton empreinte déverrouille Buget. Le mot de passe reste possible en secours.' : 'Désactivé : seul le mot de passe déverrouille Buget.'}</CardDescription></CardHeader>
+          : st.enrolled ? 'Activé : ton empreinte déverrouille Budget. Le mot de passe reste possible en secours.' : 'Désactivé : seul le mot de passe déverrouille Budget.'}</CardDescription></CardHeader>
       {st.available && <CardContent>
         {st.enrolled ? <Button variant="outline" onClick={() => void touchIdDisable().then(() => { toast.success('Touch ID désactivé'); refresh() })}>Désactiver Touch ID</Button> : (
           <form className="flex gap-2" onSubmit={async (e) => {

@@ -2,7 +2,7 @@ import AppKit
 import UniformTypeIdentifiers
 import WebKit
 
-/// Buget : fenêtre native qui affiche l'app web locale (données chiffrées dans le stockage de WebKit propre à l'app).
+/// Budget : fenêtre native qui affiche l'app web locale (données chiffrées dans le stockage de WebKit propre à l'app).
 final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, WKDownloadDelegate, WKScriptMessageHandlerWithReply {
     var window: NSWindow!
     var webView: WKWebView!
@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             fatal("Fichiers de l’app introuvables dans le paquet.")
         }
         do { server = LocalServer(root: web); try server?.start() }
-        catch { fatal("Impossible de démarrer Buget (port \(LocalServer.port) déjà utilisé ?).\n\(error.localizedDescription)") }
+        catch { fatal("Impossible de démarrer Budget (port \(LocalServer.port) déjà utilisé ?).\n\(error.localizedDescription)") }
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default() // persistant : la base chiffrée survit aux redémarrages
@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Buget"
+        window.title = "Budget"
         window.minSize = NSSize(width: 380, height: 500)
         window.contentView = webView
         window.setFrameAutosaveName("BugetMain")
@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
 
     func fatal(_ msg: String) -> Never {
-        let a = NSAlert(); a.messageText = "Buget"; a.informativeText = msg; a.runModal(); exit(1)
+        let a = NSAlert(); a.messageText = "Budget"; a.informativeText = msg; a.runModal(); exit(1)
     }
 
     // MARK: menus (sans eux, copier/coller et ⌘Q ne fonctionnent pas)
@@ -78,9 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         let main = NSMenu()
         func sub(_ title: String, _ items: [NSMenuItem]) { let m = NSMenu(title: title); items.forEach(m.addItem); let i = NSMenuItem(); i.submenu = m; main.addItem(i) }
         func item(_ t: String, _ s: Selector?, _ k: String, _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem { let i = NSMenuItem(title: t, action: s, keyEquivalent: k); i.keyEquivalentModifierMask = mods; return i }
-        sub("Buget", [item("À propos de Buget", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""), .separator(),
-                      item("Masquer Buget", #selector(NSApplication.hide(_:)), "h"), .separator(),
-                      item("Quitter Buget", #selector(NSApplication.terminate(_:)), "q")])
+        sub("Budget", [item("À propos de Budget", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""), .separator(),
+                      item("Masquer Budget", #selector(NSApplication.hide(_:)), "h"), .separator(),
+                      item("Quitter Budget", #selector(NSApplication.terminate(_:)), "q")])
         sub("Édition", [item("Annuler", Selector(("undo:")), "z"), item("Rétablir", Selector(("redo:")), "Z", [.command, .shift]), .separator(),
                         item("Couper", #selector(NSText.cut(_:)), "x"), item("Copier", #selector(NSText.copy(_:)), "c"),
                         item("Coller", #selector(NSText.paste(_:)), "v"), item("Tout sélectionner", #selector(NSText.selectAll(_:)), "a")])
@@ -120,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         if let u = action.request.url, u.scheme == "http" || u.scheme == "https", u.host != "127.0.0.1" { NSWorkspace.shared.open(u); return nil }
         let child = makeWebView(c)
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        win.contentView = child; win.title = "Buget"; win.isReleasedWhenClosed = false; win.center(); win.makeKeyAndOrderFront(nil)
+        win.contentView = child; win.title = "Budget"; win.isReleasedWhenClosed = false; win.center(); win.makeKeyAndOrderFront(nil)
         popups.append(win)
         return child
     }

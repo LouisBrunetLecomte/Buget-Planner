@@ -1,9 +1,9 @@
 #!/bin/bash
-# Fabrique Buget.app : compile l'app web (dist/) puis l'enveloppe native Swift, et les assemble.
+# Fabrique Budget.app : compile l'app web (dist/) puis l'enveloppe native Swift, et les assemble.
 set -euo pipefail
 MAC="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$(cd "$MAC/.." && pwd)"
-APP="$MAC/build/Buget.app"
+APP="$MAC/build/Budget.app"
 
 # Logs sur stderr : stdout ne contient que le chemin du paquet (utilisable en $(...)).
 cd "$ROOT"
@@ -29,8 +29,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <dict>
     <key>CFBundleExecutable</key><string>Buget</string>
     <key>CFBundleIdentifier</key><string>local.louloubl.Buget</string>
-    <key>CFBundleName</key><string>Buget</string>
-    <key>CFBundleDisplayName</key><string>Buget</string>
+    <key>CFBundleName</key><string>Budget</string>
+    <key>CFBundleDisplayName</key><string>Budget</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>

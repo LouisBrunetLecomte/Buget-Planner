@@ -1,4 +1,4 @@
-# Buget
+# Budget
 
 Application de budget personnel **local-first** et **100 % gratuite**. Tes données restent sur ton appareil, chiffrées avec ton mot de passe : pas de serveur, pas de compte, pas de télémétrie.
 
@@ -6,18 +6,18 @@ Application de budget personnel **local-first** et **100 % gratuite**. Tes donn�
 
 ```bash
 npm install
-./macos/Scripts/install.sh     # fabrique et installe /Applications/Buget.app
+./macos/Scripts/install.sh     # fabrique et installe /Applications/Budget.app
 ```
 
-Buget s'ouvre ensuite comme n'importe quelle app (Launchpad, Spotlight, Dock). C'est une fenêtre native (Swift + WebKit) qui affiche l'app web embarquée, servie uniquement sur `127.0.0.1:47219`.
+Budget s'ouvre ensuite comme n'importe quelle app (Launchpad, Spotlight, Dock). C'est une fenêtre native (Swift + WebKit) qui affiche l'app web embarquée, servie uniquement sur `127.0.0.1:47219`.
 - **Données** : elles sont chiffrées dans le stockage WebKit propre à l'app (le dossier WebKit de l’app dans `~/Library/WebKit`) et sont conservées quand tu réinstalles une nouvelle version.
 - **Téléchargements** (sauvegardes, PDF, CSV) : ils arrivent dans `~/Téléchargements`.
-- **Touch ID** : après la création de la base ou un premier déverrouillage au mot de passe, ton empreinte suffit pour ouvrir Buget. Le mot de passe reste utilisable en secours (« Utiliser le mot de passe »). L'option se règle dans Paramètres → Touch ID.
+- **Touch ID** : après la création de la base ou un premier déverrouillage au mot de passe, ton empreinte suffit pour ouvrir Budget. Le mot de passe reste utilisable en secours (« Utiliser le mot de passe »). L'option se règle dans Paramètres → Touch ID.
 - **Prérequis** : macOS 26 et les outils de ligne de commande Xcode (`xcode-select --install`).
 
 ## En ligne (site Odoo)
 
-Buget est aussi en ligne sur **https://quansi.odoo.com**. Chaque visiteur a sa propre base, chiffrée dans son navigateur : rien n'est envoyé à Odoo.
+Budget est aussi en ligne sur **https://quansi.odoo.com**. Chaque visiteur a sa propre base, chiffrée dans son navigateur : rien n'est envoyé à Odoo.
 - **Mise à jour** : chaque push sur `main` lance l'action « Version Odoo » (`.github/workflows/odoo.yml`), qui publie `buget.html.gz` sur la branche `odoo`. La page Odoo le télécharge à chaque visite.
 - **Secours** : si GitHub ne répond pas, la page charge la copie stockée dans Odoo (pièce jointe). Pour la rafraîchir : `npm run build:odoo`, puis remplacer la pièce jointe `buget-app.gz`.
 - **Synchronisation** : dans Quansi, le coffre chiffré est envoyé sur le compte du membre après chaque modification (action Odoo `quansi-sync`), et récupéré à l'ouverture, au retour sur l'app et toutes les 30 s. Le serveur ne peut pas le lire. La dernière version enregistrée gagne (pas de fusion). « Tout effacer » efface aussi la copie du compte.
