@@ -17,30 +17,31 @@ export function jsonToSealed(text: string): Sealed {
   return { v: 1, salt: unb64(j.salt), iv: unb64(j.iv), data: unb64(j.data).buffer }
 }
 
-type OdooWindow = Window & { odoo?: { csrf_token?: string; __session_info__?: { uid?: number } } }
+type OdooWindow = Window & { odoo?: { csrf_token?: string } }
 
 /** Page Quansi qui contient Budget (même site), ou null : app Mac, navigateur seul, développement. */
-function host(): { url: string; csrf: string; uid: number } | null {
+function host(): { url: string; csrf: string } | null {
   try {
     const p = window.parent as OdooWindow
-    const uid = p.odoo?.__session_info__?.uid, csrf = p.odoo?.csrf_token
-    if (p === window || !csrf || !uid) return null
-    return { url: `${p.location.origin}/website/action/quansi-sync`, csrf, uid }
+    const csrf = p.odoo?.csrf_token
+    if (p === window || !csrf) return null
+    return { url: `${p.location.origin}/website/action/quansi-sync`, csrf }
   } catch { return null } // autre site : pas d'accès, pas de synchro
 }
 export const syncEnabled = () => host() !== null
 
 // version de la copie du compte que cet appareil a déjà (par compte, pour plusieurs comptes sur un même navigateur)
-const knownKey = () => `quansi-sync-version:${host()?.uid ?? 0}`
+let uid = 0 // compte Quansi connecté, donné par le serveur (Odoo ne le laisse pas dans la page)
+const knownKey = () => `quansi-sync-version:${uid}`
 export const knownVersion = () => Number(localStorage.getItem(knownKey()) ?? 0)
 export const setKnownVersion = (v: number) => localStorage.setItem(knownKey(), String(v))
 // compte à qui appartient le coffre de cet appareil (pour ne pas montrer le coffre d'un autre compte)
 const OWNER = 'quansi-sync-owner'
 export const vaultOwner = () => Number(localStorage.getItem(OWNER) ?? 0)
-export const setVaultOwner = () => { const h = host(); if (h) localStorage.setItem(OWNER, String(h.uid)) }
-export const currentUid = () => host()?.uid ?? 0
+export const setVaultOwner = () => { if (uid) localStorage.setItem(OWNER, String(uid)) }
+export const currentUid = () => uid
 
-async function call(op: 'get' | 'put' | 'delete', extra: Record<string, string> = {}): Promise<{ version: number; vault?: string }> {
+async function call(op: 'get' | 'put' | 'delete', extra: Record<string, string> = {}): Promise<{ version: number; vault?: string; uid?: number }> {
   const h = host()
   if (!h) throw new Error('Synchro indisponible')
   const fd = new FormData()
@@ -48,18 +49,25 @@ async function call(op: 'get' | 'put' | 'delete', extra: Record<string, string> 
   for (const [k, v] of Object.entries(extra)) fd.append(k, v)
   const r = await fetch(h.url, { method: 'POST', body: fd, credentials: 'same-origin' })
   if (!r.ok) throw new Error(`Synchro : erreur ${r.status}`)
-  return r.json() as Promise<{ version: number; vault?: string }>
+  const j = await r.json() as { version: number; vault?: string; uid?: number }
+  if (j.uid) uid = j.uid
+  return j
 }
+
+/** À appeler avant tout : apprend le compte connecté (sans télécharger le coffre). */
+export async function ready() { if (!uid) await call('get', { meta: '1' }) }
 
 /** Copie du compte plus récente que celle de cet appareil, ou null. */
 export async function fetchNewer(): Promise<{ version: number; sealed: Sealed | null } | null> {
+  await ready()
   const r = await call('get', { known: String(knownVersion()) })
   if (r.version === knownVersion()) return null
   return { version: r.version, sealed: r.vault ? jsonToSealed(r.vault) : null }
 }
 export async function upload(v: Sealed): Promise<number> {
+  await ready()
   const r = await call('put', { vault: sealedToJson(v) })
   setKnownVersion(r.version); setVaultOwner()
   return r.version
 }
-export async function deleteRemote() { await call('delete'); setKnownVersion(0) }
+export async function deleteRemote() { await ready(); await call('delete'); setKnownVersion(0) }

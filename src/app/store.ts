@@ -40,6 +40,7 @@ const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.e
 
 /** Avant le déverrouillage : récupère la copie du compte si elle est plus récente que celle de l'appareil. */
 async function pullBeforeOpen() {
+  await sync.ready()
   const owner = sync.vaultOwner()
   // coffre d'un autre compte Quansi sur ce navigateur : il est déjà sur son compte, on ne le montre pas
   if (owner && owner !== sync.currentUid()) { await wipeVault(); sync.setKnownVersion(0) }
