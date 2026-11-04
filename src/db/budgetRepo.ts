@@ -1,15 +1,17 @@
 import { and, eq, gte, isNull, lte, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { account, budgetException, budgetLine, category, recurring, transaction, transactionSplit } from './schema'
-import { balances, cachedRates, getSetting, listCategories, putSetting, transferSuggestions } from './repo'
+import { balances, cachedRates, getSetting, linkTransfer, listCategories, putSetting, transferSuggestions, type Category } from './repo'
 import { normalizeLabel } from '@/core/labels'
 import { addDays, addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
-import { periodEnd, periodLabel, periodOf, periodStart } from '@/core/period'
+import { periodEnd, periodLabel, periodName, periodOf, periodStart } from '@/core/period'
 import { rateOn } from '@/core/fx'
 import { detectRecurring, matchOccurrences, monthlyEquivalent, occurrences, priceIncrease, type MatchTx, type Suggestion } from '@/core/recurring'
 import { applyScope, computeBudget, resteAVivre, type Actuals, type PlannedItem, type RecurringPlan, type Scope } from '@/core/budget'
+import { buildForecast, everydayRate, type Forecast } from '@/core/forecast'
 
 export type Recurring = typeof recurring.$inferSelect
+const LIQUID: string[] = ['courant', 'carte', 'especes']
 const now = sql`(datetime('now'))`
 
 // ---------- récurrences ----------
@@ -23,22 +25,26 @@ export const deleteRecurring = (db: Db, id: string) => db.delete(recurring).wher
  * Modifie une échéance « à partir d'un mois » sans réécrire le passé : l'ancienne s'arrête le mois précédent,
  * une copie modifiée prend le relais. Si le mois est celui du début (ou avant), modification sur place.
  */
-export function updateRecurringFrom(db: Db, id: string, fromMonth: string, patch: { amount?: number; day?: number; name?: string }) {
+export function updateRecurringFrom(db: Db, id: string, fromMonth: string, patch: { amount?: number; day?: number; name?: string; endDate?: string | null; kind?: Recurring['kind'] }) {
   const r = db.select().from(recurring).where(eq(recurring.id, id)).get()
   if (!r) throw new Error('Échéance introuvable')
   const clamp = (m: string, d: number) => `${m}-${String(Math.min(d, daysInMonth(m))).padStart(2, '0')}`
+  // le signe suit le type : un abonnement passé de « revenu » à « charge » devient une sortie
+  const amount = patch.amount ?? (patch.kind ? (patch.kind === 'revenu' ? 1 : -1) * Math.abs(r.amount) : undefined)
   const v = {
-    ...(patch.amount !== undefined ? { amount: patch.amount } : {}), ...(patch.name ? { name: patch.name } : {}),
-    ...(patch.day ? { dayOfMonth: patch.day } : {}),
+    ...(amount !== undefined ? { amount } : {}), ...(patch.name ? { name: patch.name } : {}),
+    ...(patch.day ? { dayOfMonth: patch.day } : {}), ...(patch.kind ? { kind: patch.kind } : {}),
   }
+  if (patch.endDate !== undefined) db.update(recurring).set({ endDate: patch.endDate, updatedAt: now }).where(eq(recurring.id, id)).run()
+  if (!Object.keys(v).length) return
   if (fromMonth <= monthOf(r.startDate))
     return db.update(recurring).set({ ...v, ...(patch.day ? { startDate: clamp(monthOf(r.startDate), patch.day) } : {}), updatedAt: now }).where(eq(recurring.id, id)).run()
-  const next = occurrences(r, `${fromMonth}-01`, addDays(`${fromMonth}-01`, 800))[0]
+  const next = occurrences({ ...r, endDate: patch.endDate !== undefined ? patch.endDate : r.endDate }, `${fromMonth}-01`, addDays(`${fromMonth}-01`, 800))[0]
   if (!next) throw new Error('Plus aucune échéance après cette date')
   db.update(recurring).set({ endDate: endOfMonth(addMonths(fromMonth, -1)), updatedAt: now }).where(eq(recurring.id, id)).run()
   const { id: _old, createdAt: _c, updatedAt: _u, ...copy } = r
   void _old; void _c; void _u
-  return db.insert(recurring).values({ ...copy, ...v, startDate: patch.day ? clamp(monthOf(next), patch.day) : next }).returning().get()
+  return db.insert(recurring).values({ ...copy, ...v, ...(patch.endDate !== undefined ? { endDate: patch.endDate } : {}), startDate: patch.day ? clamp(monthOf(next), patch.day) : next }).returning().get()
 }
 
 /** Échéances datées de chaque mois, rangées par catégorie : elles alimentent directement le budget. */
@@ -58,37 +64,64 @@ export function recurringPlan(db: Db, from: string, to: string): RecurringPlan {
 }
 
 /**
- * Reste à vivre de la période en cours, détaillé : solde des comptes courants + à recevoir − charges datées à payer
- * − enveloppes pas encore dépensées − échéances hors budget (sans catégorie, virements d'épargne…).
+ * Dépense courante observée (R) : dépenses des comptes courants des 90 derniers jours, hors virements, coches,
+ * opérations rapprochées d'une échéance et catégories qui ont une ligne de budget sur leur période.
  */
-export function resteAVivreFor(db: Db, today: string) {
-  const cur = currentPeriod(db, today), { start, end } = periodBounds(db, cur)
-  const m = getBudget(db, cur, cur)[0]!
-  const cats = listCategories(db)
-  let incoming = 0, dated = 0, envelopes = 0
-  for (const r of m.rows) {
-    if (r.kind === 'revenu') incoming += r.toCome
-    else if (r.items.length && !r.exception) dated += r.toCome
-    else envelopes += r.toCome
-  }
-  // échéances qui ne passent pas par le budget : sans catégorie, ou vers l'épargne (catégorie de transfert)
-  let other = 0
-  for (const o of occurrencesBetween(db, start, end)) {
-    const c = cats.find((x) => x.id === o.recurring.categoryId)
-    if (!o.paid && (!c || c.kind === 'transfert')) other += o.recurring.amount
-  }
-  const liquid = liquidBalance(db)
-  const r = resteAVivre(liquid, incoming + Math.max(0, other), dated + envelopes + Math.max(0, -other), today, end)
-  return { ...r, liquid, incoming: incoming + Math.max(0, other), dated: dated + Math.max(0, -other), envelopes, end, day: periodDay(db), proratedFrom: m.proratedFrom ?? null }
+function everydayFor(db: Db, today: string) {
+  const day = periodDay(db), first = db.select({ d: sql<string | null>`min(${transaction.date})` }).from(transaction).get()?.d ?? null
+  const started = appStart(db), firstDate = [first, started].filter((x): x is string => !!x).sort()[0] ?? null
+  const from = addDays(today, -90)
+  const liquid = new Set(db.select().from(account).all().filter((a) => LIQUID.includes(a.type)).map((a) => a.id))
+  const settled = new Set(occurrencesBetween(db, addDays(from, -6), addDays(today, 6)).flatMap((o) => (o.paid ? [o.paid.id] : [])))
+  const cats = listCategories(db), parent = new Map(cats.map((c) => [c.id, c.parentId]))
+  const budgeted = new Set(getBudget(db, periodOf(from, day), periodOf(today, day)).flatMap((m) => m.rows.filter((r) => r.kind === 'depense').map((r) => `${m.month}|${r.categoryId}`)))
+  const isBudgeted = (k: string, c: string | null) => !!c && (budgeted.has(`${k}|${c}`) || budgeted.has(`${k}|${parent.get(c)}`))
+  const txs = db.select({ id: transaction.id, date: transaction.date, amount: transaction.amountEur, c: transaction.categoryId, acc: transaction.accountId }).from(transaction)
+    .where(and(gte(transaction.date, from), lte(transaction.date, today), isNull(transaction.transferGroupId), isNull(transaction.plannedRef), sql`${transaction.amountEur} < 0`)).all()
+  // ponytail: une opération ventilée compte entière dans le quotidien, même si une part est budgétée
+  return everydayRate(txs.filter((t) => liquid.has(t.acc) && !settled.has(t.id) && !isBudgeted(periodOf(t.date, day), t.c)), today, firstDate)
 }
 
-/** Opérations qui correspondent à une récurrence : même motif, même sens, même compte si précisé. */
+function buildFor(db: Db, today: string, horizon: number, scope: 'liquid' | 'total') {
+  const day = periodDay(db), cur = periodOf(today, day)
+  const months = getBudget(db, cur, addMonths(cur, Math.max(1, horizon) - 1))
+  const periods = months.map((m) => ({ key: m.month, name: periodName(m.month, day), start: periodStart(m.month, day), end: periodEnd(m.month, day), budget: m }))
+  const cats = listCategories(db), label = (id: string) => cats.find((c) => c.id === id)?.name ?? '?'
+  // échéances qui ne passent pas par le budget : sans catégorie, ou virements (épargne)
+  const extra = occurrencesBetween(db, periods[0]!.start, periods.at(-1)!.end).flatMap((o) => {
+    const c = cats.find((x) => x.id === o.recurring.categoryId)
+    if (o.paid || (c && c.kind !== 'transfert')) return []
+    return [{ date: o.date < today ? today : o.date, amount: o.recurring.amount, label: o.recurring.name, savings: !!o.recurring.toAccountId || c?.kind === 'transfert' }]
+  })
+  const start = scope === 'liquid' ? liquidBalance(db) : totalBalance(db)
+  return { f: buildForecast({ scope, today, start, rate: everydayFor(db, today), periods, extra, label }), first: months[0]! }
+}
+
+/** Prévision unique du solde (voir core/forecast.ts) : `horizon` périodes à partir de celle en cours. */
+export const forecast = (db: Db, today: string, horizon: number, scope: 'liquid' | 'total' = 'liquid'): Forecast => buildFor(db, today, horizon, scope).f
+
+/**
+ * À vivre jusqu'à la prochaine paie = comptes courants + à recevoir − échéances à payer − ponctuels restants
+ * − enveloppes restantes. forecastEnd = à vivre − dépense courante × jours restants = première case de prévision.
+ */
+export function resteAVivreFor(db: Db, today: string) {
+  const { f, first } = buildFor(db, today, 1, 'liquid'), p = f.periods[0]!
+  const dated = p.fixed + p.savings
+  const r = resteAVivre(f.start, p.income, dated + p.oneOff + p.envelopes, today, p.end)
+  return { ...r, liquid: f.start, incoming: p.income, dated, oneOff: p.oneOff, envelopes: p.envelopes, end: p.end, day: periodDay(db), proratedFrom: first.proratedFrom ?? null,
+    forecastEnd: p.balance, dailyEveryday: f.dailyEveryday, confidence: f.confidence }
+}
+
+/**
+ * Opérations qui peuvent régler une récurrence : même sens, ni pointées ni virement, même compte si précisé,
+ * libellé contenant le motif (ou à défaut le nom) ou même catégorie, et montant proche (±20 %, 5 € au moins).
+ * Ainsi « +180 CAF » saisi au Journal règle l'échéance CAF créée à la main, sans motif.
+ */
 function matchingTxs(db: Db, r: Recurring): MatchTx[] {
-  if (!r.pattern) return []
-  const p = normalizeLabel(r.pattern)
-  return db.select({ id: transaction.id, date: transaction.date, amountEur: transaction.amountEur, labelNorm: transaction.labelNorm, accountId: transaction.accountId })
-    .from(transaction).where(and(isNull(transaction.transferGroupId), r.amount < 0 ? sql`${transaction.amountEur} < 0` : sql`${transaction.amountEur} > 0`)).all()
-    .filter((t) => t.labelNorm.includes(p) && (!r.accountId || t.accountId === r.accountId))
+  const p = normalizeLabel(r.pattern ?? r.name), tol = Math.max(Math.abs(r.amount) / 5, 500)
+  return db.select({ id: transaction.id, date: transaction.date, amountEur: transaction.amountEur, labelNorm: transaction.labelNorm, accountId: transaction.accountId, categoryId: transaction.categoryId })
+    .from(transaction).where(and(isNull(transaction.transferGroupId), isNull(transaction.plannedRef), r.amount < 0 ? sql`${transaction.amountEur} < 0` : sql`${transaction.amountEur} > 0`)).all()
+    .filter((t) => ((p && t.labelNorm.includes(p)) || (r.categoryId && t.categoryId === r.categoryId)) && Math.abs(t.amountEur - r.amount) <= tol && (!r.accountId || t.accountId === r.accountId))
 }
 
 export interface Occurrence { recurring: Recurring; date: string; paid: MatchTx | null }
@@ -140,14 +173,20 @@ function defaultAccount(db: Db, preferred: string | null) {
  * Coche une échéance : enregistre l'opération réelle (montant prévu, ou celui saisi) sur le compte de l'échéance.
  * Date : celle de l'échéance, ou aujourd'hui si on coche en avance. Elle compte quand même pour la période de l'échéance.
  */
-export function tickOccurrence(db: Db, recurringId: string, date: string, today: string, amount?: number) {
+export function tickOccurrence(db: Db, recurringId: string, date: string, today: string, amount?: number): 'cree' | 'deja' {
   const r = db.select().from(recurring).where(eq(recurring.id, recurringId)).get()
   if (!r) throw new Error('Échéance introuvable')
-  const ref = occurrenceRef(r.id, date)
-  if (pointed(db).has(ref)) return
+  // déjà cochée, retrouvée dans le Journal ou comprise dans le solde de départ : ne rien créer (pas de double compte)
+  if (paidFor(db, r, [date]).has(date)) return 'deja'
   const acc = defaultAccount(db, r.accountId)
-  db.insert(transaction).values({ accountId: acc.id, date: date > today ? today : date, amount: amount ?? r.amount, currency: 'EUR', amountEur: amount ?? r.amount,
-    label: r.name, labelNorm: normalizeLabel(r.name), categoryId: r.categoryId, plannedRef: ref }).run()
+  const v = { date: date > today ? today : date, currency: 'EUR', label: r.name, labelNorm: normalizeLabel(r.name) }
+  const a = amount ?? r.amount
+  const debit = db.insert(transaction).values({ ...v, accountId: acc.id, amount: a, amountEur: a, categoryId: r.toAccountId ? null : r.categoryId, plannedRef: occurrenceRef(r.id, date) }).returning().get()
+  if (r.toAccountId) {
+    const credit = db.insert(transaction).values({ ...v, accountId: r.toAccountId, amount: -a, amountEur: -a, categoryId: null }).returning().get()
+    linkTransfer(db, [debit.id, credit.id])
+  }
+  return 'cree'
 }
 
 /** Coche une ligne de budget sans date (courses, sorties…) : le montant indiqué est enregistré comme payé pour la période. */
@@ -167,7 +206,12 @@ export function tickLine(db: Db, categoryId: string, period: string, amount: num
 }
 
 /** Décoche : l'opération créée par le pointage est supprimée, tout revient comme avant. */
-export const untick = (db: Db, ref: string) => db.delete(transaction).where(eq(transaction.plannedRef, ref)).run()
+export function untick(db: Db, ref: string) {
+  const t = db.select().from(transaction).where(eq(transaction.plannedRef, ref)).get()
+  if (!t) return
+  // un virement vers l'épargne a créé deux opérations liées : on retire les deux
+  db.delete(transaction).where(t.transferGroupId ? eq(transaction.transferGroupId, t.transferGroupId) : eq(transaction.id, t.id)).run()
+}
 
 /** Prochaine échéance à partir d'aujourd'hui, en sautant celle déjà réglée (cochée, ou prélevée en avance). */
 function nextUnpaid(db: Db, r: Recurring, today: string): string | null {
@@ -243,7 +287,7 @@ export function actualsBetween(db: Db, from: string, to: string): Actuals {
   const day = periodDay(db), lo = addDays(periodStart(from, day), -10), hi = addDays(periodEnd(to, day), 10)
   const range = and(gte(transaction.date, lo), lte(transaction.date, hi), isNull(transaction.transferGroupId))
   const override = new Map<string, string>()
-  for (const r of listRecurring(db).filter((x) => x.active && x.pattern)) {
+  for (const r of listRecurring(db).filter((x) => x.active)) {
     const dates = occurrences(r, lo, hi)
     for (const [date, t] of matchOccurrences(dates, matchingTxs(db, r).filter((t) => t.date >= lo && t.date <= hi), r)) override.set(t.id, periodOf(date, day))
   }
@@ -287,7 +331,7 @@ export function getBudget(db: Db, from: string, to: string) {
     if (m) {
       const s0 = periodStart(k, day), e0 = periodEnd(k, day)
       const ratio = (daysBetweenIso(startedOn, e0) + 1) / (daysBetweenIso(s0, e0) + 1)
-      for (const r of m.rows) if (r.kind === 'depense' && !(r.items.length && !r.exception)) r.toCome = Math.max(0, Math.round((r.planned + r.carry) * ratio) - r.actual)
+      for (const r of m.rows) if (r.kind === 'depense' && !(r.items.length && !r.exception) && r.base !== null) r.toCome = Math.max(0, Math.round((r.planned + r.carry) * ratio) - r.actual)
       m.proratedFrom = startedOn
     }
   }
@@ -316,6 +360,76 @@ export function setBudget(db: Db, categoryId: string, month: string, amount: num
     t.delete(budgetException).where(and(eq(budgetException.categoryId, categoryId), eq(budgetException.month, month))).run()
   })
 }
+/**
+ * Ajout « une seule fois » sur une période. Sans jour : une exception pleine (jamais proratisée ni étalée), qui s'ajoute
+ * au prévu existant de la catégorie. Avec un jour : une échéance datée unique (fin = début).
+ */
+export function addOneOff(db: Db, v: { categoryId: string; period: string; amount: number; day?: number | null; reason?: string | null }) {
+  if (!Number.isInteger(v.amount) || v.amount <= 0) throw new Error('Montant invalide')
+  const cat = listCategories(db).find((c) => c.id === v.categoryId)
+  if (!cat) throw new Error('Catégorie introuvable')
+  if (v.day) {
+    const date = dateInPeriod(db, v.period, v.day)
+    createRecurring(db, { name: v.reason?.trim() || cat.name, kind: cat.kind === 'revenu' ? 'revenu' : 'charge', amount: cat.kind === 'revenu' ? v.amount : -v.amount,
+      freq: 'month', interval: 1, startDate: date, dayOfMonth: v.day, endDate: date, categoryId: cat.id })
+    return
+  }
+  const row = getBudget(db, v.period, v.period)[0]?.rows.find((r) => r.categoryId === v.categoryId)
+  setBudget(db, v.categoryId, v.period, (row?.planned ?? 0) + v.amount, 'month', v.reason)
+}
+
+/** Date du jour `day` (du mois) qui tombe dans la période `key` : paie le 28, le 5 de la période d'octobre est le 5 novembre. */
+function dateInPeriod(db: Db, key: string, day: number) {
+  const at = (m: string) => `${m}-${String(Math.min(day, daysInMonth(m))).padStart(2, '0')}`
+  return at(key) < periodStart(key, periodDay(db)) ? at(addMonths(key, 1)) : at(key)
+}
+
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+/** Catégorie existante du même nom (sans accents ni casse, « s » final toléré), sous-catégories comprises. */
+export function findCategory(db: Db, name: string, kind: 'depense' | 'revenu'): Category | null {
+  const n = fold(name), bare = (x: string) => x.replace(/s$/, '')
+  if (!n) return null
+  const cats = listCategories(db).filter((c) => c.kind === kind)
+  return cats.find((c) => fold(c.name) === n) ?? cats.find((c) => bare(fold(c.name)) === bare(n)) ?? null
+}
+
+/** Virement mensuel vers un compte épargne : sort des comptes courants, n'est pas une dépense. */
+/** `startMonth` est la clé de la période de la première échéance. */
+export function createSavingsTransfer(db: Db, v: { name: string; fromAccountId: string | null; toAccountId: string; amount: number; day: number; startMonth: string; endDate?: string | null }) {
+  if (!Number.isInteger(v.amount) || v.amount === 0) throw new Error('Montant invalide')
+  const transfer = listCategories(db).find((c) => c.kind === 'transfert' && !c.parentId)
+  return createRecurring(db, { name: v.name, kind: 'charge', accountId: v.fromAccountId, toAccountId: v.toAccountId, categoryId: transfer?.id ?? null,
+    amount: -Math.abs(v.amount), freq: 'month', interval: 1, dayOfMonth: v.day, endDate: v.endDate ?? null,
+    startDate: dateInPeriod(db, v.startMonth, v.day) })
+}
+
+/**
+ * Corrige le sens d'une ligne (abonnement saisi en revenu…). Catégorie sans opération ni sous-catégorie : on change son type.
+ * Sinon on bascule ses lignes, exceptions et échéances vers la catégorie du même nom de l'autre type (créée au besoin).
+ * Les échéances prennent le type et le signe correspondants. Renvoie la catégorie finale.
+ */
+export function changeLineKind(db: Db, categoryId: string, kind: 'depense' | 'revenu'): string {
+  return db.transaction((t) => {
+    const tdb = t as unknown as Db
+    const c = t.select().from(category).where(eq(category.id, categoryId)).get()
+    if (!c) throw new Error('Catégorie introuvable')
+    if (c.kind === kind) return c.id
+    const used = t.select({ id: transaction.id }).from(transaction).where(eq(transaction.categoryId, c.id)).limit(1).get()
+      || t.select({ id: category.id }).from(category).where(eq(category.parentId, c.id)).limit(1).get()
+    let target = c.id
+    if (!used && !c.parentId) t.update(category).set({ kind, updatedAt: now }).where(eq(category.id, c.id)).run()
+    else {
+      target = findCategory(tdb, c.name, kind)?.id ?? t.insert(category).values({ name: c.name, kind }).returning().get().id
+      t.update(budgetLine).set({ categoryId: target }).where(eq(budgetLine.categoryId, c.id)).run()
+      t.update(budgetException).set({ categoryId: target }).where(eq(budgetException.categoryId, c.id)).run()
+      t.update(recurring).set({ categoryId: target }).where(eq(recurring.categoryId, c.id)).run()
+    }
+    for (const r of t.select().from(recurring).where(eq(recurring.categoryId, target)).all())
+      t.update(recurring).set({ kind: kind === 'revenu' ? 'revenu' : r.kind === 'revenu' ? 'charge' : r.kind, amount: (kind === 'revenu' ? 1 : -1) * Math.abs(r.amount), updatedAt: now }).where(eq(recurring.id, r.id)).run()
+    return target
+  })
+}
+
 export const removeException = (db: Db, id: string) => db.delete(budgetException).where(eq(budgetException.id, id)).run()
 /** Supprime les montants saisis d'une catégorie (pas ses exceptions). */
 export const removeLines = (db: Db, categoryId: string) => db.delete(budgetLine).where(eq(budgetLine.categoryId, categoryId)).run()

@@ -2,18 +2,19 @@ import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Sankey, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { axisEuro, axisProps, ChartTooltip, gridProps, LegendItem, monthShort, TableView } from '@/components/charts'
+import { axisEuro, axisProps, ChartTooltip, gridProps, LegendItem, TableView } from '@/components/charts'
 import { today } from '@/core/dates'
 import { formatMoney } from '@/core/money'
 import * as an from '@/db/analyticsRepo'
 import { currentPeriod } from '@/db/budgetRepo'
 import { useDb } from '@/app/store'
-import { Empty, PageHeader, useCategories } from '@/app/ui'
+import { Empty, MonthPicker, PageHeader, useCategories } from '@/app/ui'
+import { usePeriodTitle } from '@/app/periods'
 
 const e = (c: number) => c / 100 // les graphiques travaillent en euros
 
 function BalanceForecast({ horizon }: { horizon: number }) {
+  const title = usePeriodTitle(), ms = (m: string) => title(m, 'short')
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const d = useMemo(() => an.balanceAndForecast(db, today(), horizon), [db, version, horizon])
@@ -29,28 +30,29 @@ function BalanceForecast({ horizon }: { horizon: number }) {
     <Card>
       <CardHeader><CardTitle>Solde total et prévision</CardTitle><CardDescription>Fin de période (de paie à paie), tous comptes, depuis ton premier jour dans Buget. Prévision : ce qui reste à payer et recevoir, puis le budget prévu.</CardDescription></CardHeader>
       <CardContent>
-        {neg && <p role="alert" className="mb-2 text-sm text-destructive">⚠ Découvert probable fin {monthShort(neg.month)} ({formatMoney(neg.balance)}).</p>}
+        {neg && <p role="alert" className="mb-2 text-sm text-destructive">⚠ Découvert probable fin {ms(neg.month)} ({formatMoney(neg.balance)}), avant ta paie.</p>}
         <div className="mb-2 flex gap-4"><LegendItem color="var(--viz-1)" label="Réel" line /><LegendItem color="var(--viz-1)" label="Prévision" line dashed /></div>
         <div className="h-64">
           <ResponsiveContainer>
             <LineChart data={merged} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid {...gridProps} />
-              <XAxis dataKey="month" tickFormatter={monthShort} {...axisProps} />
+              <XAxis dataKey="month" tickFormatter={ms} {...axisProps} />
               <YAxis tickFormatter={axisEuro} width={48} {...axisProps} />
               {neg && <ReferenceLine y={0} stroke="var(--viz-critical)" />}
-              <Tooltip content={<ChartTooltip labelFormat={monthShort} />} />
+              <Tooltip content={<ChartTooltip labelFormat={ms} />} />
               <Line dataKey="reel" name="Réel" stroke="var(--viz-1)" strokeWidth={2} dot={merged.filter((x) => x.reel !== undefined).length === 1 ? { r: 4, fill: 'var(--viz-1)', strokeWidth: 2, stroke: 'var(--card)' } : false} activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }} connectNulls={false} />
               <Line dataKey="prevision" name="Prévision" stroke="var(--viz-1)" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <TableView head={['Mois', 'Réel', 'Prévision']} rows={merged.map((x) => [monthShort(x.month), x.reel !== undefined ? formatMoney(Math.round(x.reel * 100)) : '—', x.prevision !== undefined ? formatMoney(Math.round(x.prevision * 100)) : '—'])} />
+        <TableView head={['Mois', 'Réel', 'Prévision']} rows={merged.map((x) => [ms(x.month), x.reel !== undefined ? formatMoney(Math.round(x.reel * 100)) : '—', x.prevision !== undefined ? formatMoney(Math.round(x.prevision * 100)) : '—'])} />
       </CardContent>
     </Card>
   )
 }
 
 function IncomeVsExpense() {
+  const title = usePeriodTitle(), ms = (m: string) => title(m, 'short')
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => an.monthlyTotals(db, today()), [db, version])
@@ -66,15 +68,15 @@ function IncomeVsExpense() {
           <ResponsiveContainer>
             <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }} barGap={2}>
               <CartesianGrid {...gridProps} />
-              <XAxis dataKey="month" tickFormatter={monthShort} {...axisProps} />
+              <XAxis dataKey="month" tickFormatter={ms} {...axisProps} />
               <YAxis tickFormatter={axisEuro} width={48} {...axisProps} />
-              <Tooltip content={<ChartTooltip labelFormat={monthShort} />} cursor={{ fill: 'var(--muted)', opacity: 0.5 }} />
+              <Tooltip content={<ChartTooltip labelFormat={ms} />} cursor={{ fill: 'var(--muted)', opacity: 0.5 }} />
               <Bar dataKey="income" name="Revenus" fill="var(--viz-1)" radius={[4, 4, 0, 0]} maxBarSize={24} />
               <Bar dataKey="expense" name="Dépenses" fill="var(--viz-2)" radius={[4, 4, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <TableView head={['Période', 'Revenus', 'Dépenses', 'Épargne']} rows={rows.map((r) => [monthShort(r.month), formatMoney(r.income), formatMoney(r.expense), formatMoney(r.income - r.expense)])} />
+        <TableView head={['Période', 'Revenus', 'Dépenses', 'Épargne']} rows={rows.map((r) => [ms(r.month), formatMoney(r.income), formatMoney(r.expense), formatMoney(r.income - r.expense)])} />
         </>}
       </CardContent>
     </Card>
@@ -83,6 +85,7 @@ function IncomeVsExpense() {
 
 /** Barres classées, une seule teinte : comparer les postes entre eux (plutôt qu'un camembert). */
 function Breakdown({ month }: { month: string }) {
+  const title = usePeriodTitle(), ms = (m: string) => title(m, 'short')
   const { db, version } = useDb()
   const { label } = useCategories()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,7 +93,7 @@ function Breakdown({ month }: { month: string }) {
   const max = d.rows[0]?.amount ?? 0
   return (
     <Card>
-      <CardHeader><CardTitle>Répartition des dépenses</CardTitle><CardDescription>{monthShort(month)} · total {formatMoney(d.total)}</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Répartition des dépenses</CardTitle><CardDescription>{ms(month)} · total {formatMoney(d.total)}</CardDescription></CardHeader>
       <CardContent>
         {!d.rows.length ? <Empty>Aucune dépense ce mois-ci.</Empty> : (
           <ul className="grid gap-2">
@@ -124,13 +127,14 @@ function SankeyNode({ x, y, width, height, payload }: SNode) {
 }
 
 function Flows({ month }: { month: string }) {
+  const title = usePeriodTitle(), ms = (m: string) => title(m, 'short')
   const { db, version } = useDb()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const d = useMemo(() => an.sankeyData(db, month), [db, version, month])
   const data = { nodes: d.nodes, links: d.links.map((l) => ({ ...l, value: e(l.value) })) }
   return (
     <Card className="lg:col-span-2">
-      <CardHeader><CardTitle>D’où vient l’argent, où il va</CardTitle><CardDescription>{monthShort(month)} · {formatMoney(d.inTotal)} reçus, {formatMoney(d.outTotal)} dépensés</CardDescription></CardHeader>
+      <CardHeader><CardTitle>D’où vient l’argent, où il va</CardTitle><CardDescription>{ms(month)} · {formatMoney(d.inTotal)} reçus, {formatMoney(d.outTotal)} dépensés</CardDescription></CardHeader>
       <CardContent>
         {!d.links.length ? <Empty>Pas de flux ce mois-ci.</Empty> : <>
           <div className="mb-2 flex gap-4"><LegendItem color="var(--viz-1)" label="Revenus et épargne" /><LegendItem color="var(--viz-2)" label="Dépenses" /></div>
@@ -189,6 +193,7 @@ function YearOverYear({ year }: { year: number }) {
 
 export function AnalysesPage() {
   const { db } = useDb()
+  const title = usePeriodTitle()
   const [month, setMonth] = useState(() => currentPeriod(db, today()))
   const [horizon, setHorizon] = useState(6)
   return (
@@ -196,7 +201,7 @@ export function AnalysesPage() {
       <PageHeader title="Analyses" />
       {/* filtres : une seule ligne, au-dessus de tout ce qu'ils pilotent */}
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-2">Période analysée <Input type="month" className="w-40" value={month} onChange={(ev) => ev.target.value && setMonth(ev.target.value)} /></label>
+        <span className="flex items-center gap-2">Période analysée <MonthPicker label="Période analysée" value={month} onChange={(m) => m && setMonth(m)} format={(m) => title(m)} /></span>
         <span className="flex items-center gap-1" role="group" aria-label="Horizon de prévision">Prévision
           {[3, 6, 12].map((h) => <Button key={h} size="sm" variant={horizon === h ? 'default' : 'outline'} aria-pressed={horizon === h} onClick={() => setHorizon(h)}>{h} mois</Button>)}
         </span>
@@ -206,7 +211,7 @@ export function AnalysesPage() {
         <IncomeVsExpense />
         <Flows month={month} />
         <Breakdown month={month} />
-        <YearOverYear year={Number(month.slice(0, 4))} />
+        <YearOverYear year={Number(title(month).slice(-4))} />
       </div>
       <p className="mt-4 text-xs text-muted-foreground">Montants en euros ; comptes en devise valorisés au dernier taux connu.</p>
     </>

@@ -7,15 +7,15 @@ import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import * as an from '@/db/analyticsRepo'
 import { balances, confirmBalance, getSetting, putSetting } from '@/db/repo'
-import { liquidProjection } from '@/db/analyticsRepo'
-import { periodEnd } from '@/core/period'
 import { parseAmount } from '@/core/money'
 import { Input } from '@/components/ui/input'
 import { mutate, useDb } from '@/app/store'
 import { attempt, Empty, useAccounts, useCategories } from '@/app/ui'
+import { tickDue } from '@/app/periods'
 import { cn } from '@/lib/utils'
 
-const fmtDay = (d: string) => new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+const fmtDay = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+const euros = (c: number) => formatMoney(c).replace(/,00(?=\s€)/, '') // « 412 € » plutôt que « 412,00 € » dans les phrases
 const Section = ({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) => (
   <section className={cn('rounded-3xl bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.06)] dark:shadow-none', className)}><h2 className="mb-4 text-[17px] font-semibold tracking-tight">{title}</h2>{children}</section>
 )
@@ -31,8 +31,7 @@ function Balance() {
   const [values, setValues] = useState<Record<string, string>>({})
   const d = useMemo(() => {
     const bal = balances(db), x = b.resteAVivreFor(db, today())
-    const after = x.liquid - x.dated - x.envelopes
-    return { bal, x, after, perDay: Math.floor(after / x.daysLeft), payday: addDays(x.end, 1) }
+    return { bal, x, payday: addDays(x.end, 1) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version])
   const confirmed = accounts.map((a) => a.balanceSetAt?.slice(0, 10) ?? null)
@@ -69,37 +68,44 @@ function Balance() {
       {!editing && (stale
         ? <button type="button" onClick={startEdit} className="text-sm text-amber-700 underline dark:text-amber-400">Vérifie ce montant avec ta banque et corrige-le si besoin</button>
         : <p className="text-xs text-muted-foreground">Confirmé le {new Date(last!).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: 'UTC' })} · touche le montant pour le corriger</p>)}
-      <p className={cn('mt-6 text-[17px]', d.after < 0 ? 'text-destructive' : 'text-muted-foreground')}>
-        Après tes charges et ton budget : <strong className="font-medium text-foreground">{formatMoney(d.after)}</strong>
-        {d.after > 0 && <> · {formatMoney(d.perDay)} par jour</>} jusqu’au {fmtDay(d.payday)}
-      </p>
-      {d.x.incoming > 0 && <p className="mt-1 text-xs text-muted-foreground">+ {formatMoney(d.x.incoming)} attendus, pas encore reçus</p>}
+      {/* une seule réponse à « combien il me reste » : à vivre = solde + à recevoir − à payer − budget restant */}
+      {d.x.amount >= 0
+        ? <p className="mt-6 text-[17px] text-muted-foreground">À vivre jusqu’à ta paie du {fmtDay(d.payday)} : <strong className="font-medium text-foreground">{euros(d.x.amount)}</strong> · {euros(d.x.perDay)}/jour</p>
+        : <p className="mt-6 text-[17px] text-destructive">Il manque <strong className="font-medium">{euros(-d.x.amount)}</strong> d’ici ta paie du {fmtDay(d.payday)}</p>}
+      {d.x.incoming > 0 && <p className="mt-1 text-xs text-muted-foreground">dont {euros(d.x.incoming)} attendus, pas encore reçus</p>}
+      {d.x.confidence !== 'none' && d.x.dailyEveryday > 0 && (
+        <p className="mt-1 text-xs text-muted-foreground" data-testid="forecast-end">Si tu dépenses comme d’habitude ({euros(d.x.dailyEveryday)}/jour) : ≈ {formatMoney(d.x.forecastEnd)} avant ta paie</p>
+      )}
     </section>
   )
 }
 
-/** Ton solde avant chaque paie, sur 6 mois : un clic ouvre le budget du mois pour l'ajuster. */
+/** Ton solde avant chaque paie, sur 6 périodes, dépense du quotidien comprise : un clic ouvre le budget de la période. */
 function Forecast() {
   const { db, version } = useDb()
-  const rows = useMemo(() => {
-    const day = b.periodDay(db)
-    return liquidProjection(db, today(), 6).map((p) => ({ ...p, end: periodEnd(p.month, day) }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, version])
-  const short = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const f = useMemo(() => an.forecast(db, today(), 6), [db, version])
+  const none = f.confidence === 'none'
   return (
     <Section title="Prévisions">
+      {none && (
+        <p role="status" className="mb-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <strong className="font-medium">Tes dépenses du quotidien ne sont pas encore comptées : ces prévisions sont trop hautes.</strong> Note tes dépenses quelques jours dans le <a className="underline" href="#/operations">Journal</a>, ou fixe un budget Courses.
+        </p>
+      )}
       <ol className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-        {rows.map((r) => (
-          <li key={r.month}>
-            <a href={`#/budget?m=${r.month}`} className={cn('block rounded-2xl bg-secondary p-3 text-center transition-colors hover:bg-accent dark:bg-accent dark:hover:bg-[#3a3a3c]', r.balance < 0 && 'ring-1 ring-destructive/50')}>
-              <span className="block text-xs text-muted-foreground">{short(r.end)}</span>
-              <span className={cn('block text-sm font-medium tabular-nums', r.balance < 0 && 'text-destructive')}>{formatMoney(r.balance)}</span>
+        {f.periods.map((p) => (
+          <li key={p.key}>
+            <a href={`#/budget?m=${p.key}`} aria-label={`Avant le ${fmtDay(addDays(p.end, 1))} : ${none ? 'au mieux ' : '≈ '}${formatMoney(p.balance)}`} className={cn('block rounded-2xl bg-secondary p-3 text-center transition-colors hover:bg-accent dark:bg-accent dark:hover:bg-[#3a3a3c]', p.balance < 0 && 'ring-1 ring-destructive/50')}>
+              <span className="block text-xs text-muted-foreground">avant le {fmtDay(addDays(p.end, 1))}</span>
+              <span data-testid="forecast-case" className={cn('block text-sm font-medium tabular-nums', p.balance < 0 && 'text-destructive')}>{none ? <span className="font-normal text-muted-foreground">au mieux </span> : '≈ '}{formatMoney(p.balance)}</span>
             </a>
           </li>
         ))}
       </ol>
-      <p className="mt-3 text-xs text-muted-foreground">Ton solde avant chaque paie, d’après ton budget. Clique sur un mois pour l’ajuster.</p>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Ton solde la veille de chaque paie, charges, budget et ponctuels déduits{f.dailyEveryday > 0 ? <>, si tu dépenses comme d’habitude ({euros(f.dailyEveryday)}/jour)</> : ''}. Touche une case pour ajuster ce budget.
+      </p>
     </Section>
   )
 }
@@ -122,7 +128,7 @@ function Due() {
             return (
               <li key={o.recurring.id + o.date} className="flex items-center justify-between gap-3">
                 <label className="flex min-w-0 items-center gap-2.5">
-                  <Checkbox aria-label={`${o.recurring.name} ${verb}`} onCheckedChange={(v) => v === true && attempt(() => mutate((d) => b.tickOccurrence(d, o.recurring.id, o.date, today()), { label: `${o.recurring.name} ${verb}` }), `${o.recurring.name} : ${verb}`)} />
+                  <Checkbox aria-label={`${o.recurring.name} ${verb}`} onCheckedChange={(v) => v === true && tickDue(o.recurring.id, o.recurring.name, o.date, verb)} />
                   <span className="truncate">{o.recurring.name}</span>
                   <span className={cn('shrink-0 text-xs', n < 0 ? 'text-destructive' : 'text-muted-foreground')}>{n < 0 ? 'en retard' : n === 0 ? 'aujourd’hui' : n === 1 ? 'demain' : `dans ${n} j`}</span>
                 </label>
@@ -213,8 +219,8 @@ export function HomePage() {
   const accounts = useAccounts()
   if (!accounts.length) return <Empty>Bienvenue ! Commence par <a className="underline" href="#/comptes">ajouter ton compte</a> avec son solde actuel.</Empty>
   return (
-    <div className="mx-auto grid max-w-3xl gap-5">
-      <h1 className="sr-only">Accueil</h1>
+    <div className="mx-auto grid max-w-3xl gap-5 pb-[calc(env(safe-area-inset-bottom)+5rem)] lg:pb-0">
+      <h1 className="sr-only">Aperçu</h1>
       <Balance />
       <Alerts />
       <Forecast />

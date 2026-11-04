@@ -274,3 +274,43 @@ Pour un compte dont le solde a été saisi à une date :
   - boutons et onglets en pilule ;
   - barre de navigation de 48 px, translucide et floutée ;
   - grands titres serrés ; tableaux à filets fins sans cadre.
+
+## D51. Une seule prévision, dépense du quotidien comprise
+- **Problème** : cinq calculs différents (Aperçu, Jour par jour, Simulations, Budget année, alertes), et aucun ne comptait la dépense courante réelle : « 8 411 € dans un an » pour un étudiant qui dépense 20 €/jour.
+- **Règle** : `core/forecast.ts` (pur) calcule le solde jour par jour jusqu'à la veille de chaque paie. Il retire toutes les échéances non réglées (catégorisées ou non, annuelles et ponctuelles comprises), les enveloppes, les ponctuels et le quotidien `R × jours`.
+- **R** : dépenses des comptes courants sur 90 jours au plus, hors virements, coches, opérations rapprochées d'une échéance et catégories budgétées. Confiance `none` (moins de 3 jours) : R = 0, avec un bandeau « ces prévisions sont trop hautes » et des montants préfixés « au mieux ». `low` en dessous de 14 jours.
+- **Partout le même chiffre** : `liquidProjection`, `balanceAndForecast`, `scenarioBase`, `financialCalendar` et `resteAVivreFor` enveloppent `forecast()`. L'Aperçu, la vue année du Budget et Jour par jour l'appellent directement. Un test E2E vérifie que la phrase, la première case, « Ce qu'il te restera » (Budget) et la veille de paie (Jour par jour) sont égales.
+
+## D52. Le nom d'une période suit le mois qu'on vit
+- Paie le 28 : « 28 oct. → 27 nov. » s'appelle **novembre**. La clé interne ne change pas, donc aucune migration.
+- **Règle retenue** : paie le 15 ou avant → mois de début ; après le 15 → mois suivant. On s'écarte de la spec (« majorité des jours ») : autour de février, la majorité stricte donne deux périodes du même nom et casse l'aller-retour `periodKeyFor ∘ periodName`. Ailleurs, les deux règles coïncident.
+- **Écrans** : le Budget titre « Novembre 2026 », avec en sous-titre « 28 oct. → 27 nov. · en cours ». L'Aperçu et les prévisions n'affichent que des dates (« avant le 28 déc. »).
+- **Sélecteurs** : tous les `<input type="month">` (affichés en anglais) sont remplacés par `MonthPicker` : ‹ liste en français ›. Les scénarios stockent le mois affiché.
+
+## D53. Rapprochement Journal ↔ échéance
+- Une opération règle une échéance si son libellé contient le motif (ou le nom), **ou** si elle est dans la même catégorie, à ±20 % (5 € au moins) et ±6 jours. « +180 CAF » saisi au Journal coche la CAF.
+- Cocher une échéance déjà réglée ne crée rien. `tickOccurrence` renvoie alors `'deja'` et le toast affiche « Déjà enregistré dans ton Journal ».
+- Une coche dont l'échéance est datée au plus tard le jour du solde confirmé est déjà comprise dans ce solde (cas du Navigo coché le jour même).
+- Changer la catégorie d'une opération la conserve : `setSplits(…, [])` ne remet plus la catégorie à zéro.
+
+## D54. « Ajouter une ligne » : catégories existantes, type et fréquence clairs
+- Le champ Catégorie propose les catégories existantes, sans accents ni casse ; le dernier choix est « Créer « … » ». Choisir une catégorie fixe le type. `findCategory` évite les doublons (singulier/pluriel).
+- Le réglage **Répéter** propose « Chaque mois », « Une seule fois » ou « Chaque année ». Une date de fin est possible pour les lignes datées.
+- « Une seule fois » est compté en entier sur sa période, jamais étalé ni repris le mois suivant (`addOneOff`).
+- Après chaque ajout, le formulaire revient à « Dépense, chaque mois, sans date ».
+- Dans la fenêtre d'une ligne, le Type se corrige (`changeLineKind` déplace la ligne et remet les échéances au bon signe). Montant, jour et fin se corrigent pour chaque échéance.
+- **Virement vers mon épargne** : il apparaît dans la section « Mis de côté » et n'est pas une dépense. La coche crée deux opérations liées, et le livret grossit.
+
+## D55. Budget lisible par un débutant, réconciliable avec l'Aperçu
+- **Vocabulaire** : Réalisé → **Réel** ; Pointé → **Payé / Reçu / Viré** (selon la section) ; Résultat de la période → **Revenus − dépenses** ; Débit / Crédit → **Sorties / Entrées** (le terme comptable reste en infobulle) ; « Aujourd'hui » → **Revenir à la période en cours**.
+- **Écart** : il n'apparaît que sur les lignes réglées (fini le « +696 € » vert alors que rien n'est prélevé). Il est affiché sur ordinateur, avec une infobulle.
+- **Nouvelle ligne** « Dépenses du quotidien (non budgétées) » : le prévu est estimé d'après les dépenses réelles, le réel correspond aux dépenses hors budget.
+- **Bas du tableau** : « Ce qu'il te restera avant ta paie du … », le même chiffre que la case de l'Aperçu.
+- **Aperçu** : une seule réponse, « À vivre jusqu'à ta paie du 28 nov. : 412 € · 16 €/jour » (« Il manque … » en rouge si c'est négatif), puis « si tu dépenses comme d'habitude : ≈ … ».
+
+## D56. Textes et mobile
+- **Tutoriel** : 5 étapes annoncées et comptées pareil (« Étape 1 sur 5 »). Les mots du menu sont repris (Aperçu, Journal, Salaire et charges fixes). Une ligne « Autre revenu (CAF, aide…) » est ajoutée. Les champs gardent leur valeur avec « ✓ Enregistré ». Une colonne unique sur mobile garde le champ montant à 120 px au moins.
+- **Mobile** : montants du Journal et du Budget sur une seule ligne ; marge sous l'Aperçu pour la barre du bas ; 2 toasts visibles au plus.
+- **Saisie** : la date de la saisie rapide revient au jour même après chaque ajout.
+- **Coût des charges** : le coût sur 12 mois respecte les dates de fin (`annualCost`), et la date de fin est affichée.
+- **Pas encore fait** : une opération datée dans le futur compte encore dans le solde dès sa saisie (`balances` n'a pas de date du jour). L'objectif d'épargne n'est pas encore comparé à `monthlyMargin`.

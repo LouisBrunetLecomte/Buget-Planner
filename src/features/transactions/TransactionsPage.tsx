@@ -9,7 +9,7 @@ import { categorize } from '@/core/rules'
 import { today } from '@/core/dates'
 import * as repo from '@/db/repo'
 import { mutate, useDb } from '@/app/store'
-import { AccountSelect, attempt, CategorySelect, Empty, Money, PageHeader, useAccounts, useCategories } from '@/app/ui'
+import { AccountSelect, attempt, CategorySelect, Empty, Money, MonthPicker, PageHeader, useAccounts, useCategories } from '@/app/ui'
 import { TxDialog } from './TxDialog'
 import { isFreelance } from '@/db/extrasRepo'
 
@@ -47,7 +47,7 @@ function QuickAdd() {
     if (!ok) return
     localStorage.setItem(LAST_ACCOUNT, acc!.id)
     toast.success(`${formatMoney(cents, acc!.currency)} ajouté`)
-    setAmount(''); setLabel(''); setCategoryId(null); setTouched(false)
+    setAmount(''); setLabel(''); setCategoryId(null); setTouched(false); setDate(today()) // la date choisie ne reste pas collée
     amountRef.current?.focus()
   }
 
@@ -135,7 +135,7 @@ export function TransactionsPage() {
 
   return (
     <>
-      <PageHeader title="Journal" subtitle="Toutes tes opérations, comme sur un relevé : débit, crédit et solde." />
+      <PageHeader title="Journal" subtitle={running ? 'Toutes tes opérations, comme sur un relevé : sorties, entrées et solde.' : 'Toutes tes opérations, comme sur un relevé. Choisis un compte dans Filtres pour voir son solde ligne à ligne.'} />
       <QuickAdd />
       <TransferSuggestions />
       {/* recherche toujours visible ; les autres filtres seulement sur demande */}
@@ -144,10 +144,10 @@ export function TransactionsPage() {
         <Button variant={showFilters || accountId || categoryId || month || onlyUncat ? 'secondary' : 'outline'} aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>Filtres</Button>
       </div>
       {showFilters && (
-        <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-[12rem_14rem_10rem_auto]">
+        <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-[12rem_14rem_14rem_auto]">
           <AccountSelect value={accountId} onChange={setAccountId} allLabel="Tous les comptes" />
           <CategorySelect value={categoryId} onChange={setCategoryId} allowNone={false} placeholder="Toutes catégories" />
-          <Input type="month" aria-label="Mois" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <MonthPicker label="Mois" allLabel="Tous les mois" value={month} onChange={setMonth} />
           <label className="col-span-2 flex items-center gap-2 text-sm md:col-span-1"><Checkbox checked={onlyUncat} onCheckedChange={(v) => setOnlyUncat(v === true)} />Non catégorisées</label>
           {freelance && (
             <div className="col-span-2 flex gap-1 md:col-span-4" role="group" aria-label="Pro ou perso">
@@ -176,7 +176,7 @@ export function TransactionsPage() {
               <tr>
                 <th className="w-8 pb-2"><Checkbox aria-label="Tout sélectionner" checked={visibleSel.length === txs.length} onCheckedChange={(v) => setSelected(v === true ? new Set(txs.map((t) => t.id)) : new Set())} /></th>
                 <th className="pb-2 font-normal">Date</th><th className="pb-2 font-normal">Libellé</th><th className="hidden pb-2 font-normal md:table-cell">Catégorie</th>
-                <th className="pb-2 text-right font-normal">Débit</th><th className="pb-2 text-right font-normal">Crédit</th>
+                <th className="pb-2 text-right font-normal" title="Débit : l’argent qui sort du compte">Sorties</th><th className="pb-2 text-right font-normal" title="Crédit : l’argent qui entre sur le compte">Entrées</th>
                 {running && <th className="hidden pb-2 pl-4 text-right font-normal sm:table-cell">Solde</th>}
               </tr>
             </thead>
@@ -195,15 +195,15 @@ export function TransactionsPage() {
                   <td className="hidden py-3 pr-3 text-muted-foreground md:table-cell">
                     {t.transferGroupId ? 'Virement interne' : splitIds.has(t.id) ? 'Ventilée' : t.categoryId ? catLabel(t.categoryId) : <span className="text-amber-700 dark:text-amber-400">À catégoriser</span>}
                   </td>
-                  <td className="py-3 text-right tabular-nums">{t.amount < 0 ? formatMoney(-t.amount, t.currency) : ''}</td>
-                  <td className="py-3 text-right tabular-nums text-emerald-700 dark:text-emerald-400">{t.amount > 0 ? formatMoney(t.amount, t.currency) : ''}</td>
+                  <td className="whitespace-nowrap py-3 text-right tabular-nums">{t.amount < 0 ? formatMoney(-t.amount, t.currency) : ''}</td>
+                  <td className="whitespace-nowrap py-3 pl-3 text-right tabular-nums text-emerald-700 dark:text-emerald-400">{t.amount > 0 ? formatMoney(t.amount, t.currency) : ''}</td>
                   {running && <td className="hidden py-3 pl-4 text-right tabular-nums sm:table-cell">{running.get(t.id) !== undefined ? formatMoney(running.get(t.id)!, t.currency) : ''}</td>}
                 </tr>
               ))}
             </tbody>
             <tfoot><tr className="border-t border-foreground/20 font-medium"><td colSpan={4} className="py-3">Total affiché (hors virements internes)</td>
-              <td className="py-3 text-right tabular-nums">{formatMoney(txs.filter((t) => !t.transferGroupId && t.amountEur < 0).reduce((x, t) => x - t.amountEur, 0))}</td>
-              <td className="py-3 text-right tabular-nums">{formatMoney(txs.filter((t) => !t.transferGroupId && t.amountEur > 0).reduce((x, t) => x + t.amountEur, 0))}</td>
+              <td className="whitespace-nowrap py-3 text-right tabular-nums">{formatMoney(txs.filter((t) => !t.transferGroupId && t.amountEur < 0).reduce((x, t) => x - t.amountEur, 0))}</td>
+              <td className="whitespace-nowrap py-3 pl-3 text-right tabular-nums">{formatMoney(txs.filter((t) => !t.transferGroupId && t.amountEur > 0).reduce((x, t) => x + t.amountEur, 0))}</td>
               {running && <td className="hidden sm:table-cell" />}</tr></tfoot>
           </table>
         </div>

@@ -2,12 +2,15 @@ import { eq, gte, inArray, lte, and, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { account, transaction } from './schema'
 import { balances, cachedRates, effectiveOpenings, getSetting, listCategories, putSetting } from './repo'
-import { actualsBetween, appStart, currentPeriod, getBudget, periodDay, resteAVivreFor, liquidBalance, occurrencesBetween, recurringStatus, totalBalance } from './budgetRepo'
+import { actualsBetween, appStart, currentPeriod, forecast, getBudget, periodDay, resteAVivreFor, liquidBalance, occurrencesBetween, recurringStatus } from './budgetRepo'
+import type { Forecast } from '@/core/forecast'
 import { addDays, addMonths } from '@/core/dates'
 import { periodOf, periodStart } from '@/core/period'
 import { rateOn } from '@/core/fx'
-import { projectBalances } from '@/core/budget'
 import { computeAlerts, dailyBalances, DEFAULT_ALERTS, findAnomalies, healthScore, savingsRate, type Alert, type AlertSettings } from '@/core/analytics'
+
+export { forecast }
+export type { Forecast, PeriodForecast } from '@/core/forecast'
 
 const LIQUID = ['courant', 'carte', 'especes'] as const
 
@@ -46,15 +49,12 @@ export function balanceAndForecast(db: Db, today: string, horizon: number) {
   const ends = new Map<string, number>()
   for (const p of balanceHistory(db, from, today)) ends.set(periodOf(p.date, day), p.balance)
   const hist = [...ends].map(([month, balance]) => ({ month, balance }))
-  const proj = projectBalances(totalBalance(db), getBudget(db, cur, addMonths(cur, horizon - 1)), cur)
-  return { hist, proj }
+  return { hist, proj: periodEnds(forecast(db, today, horizon, 'total')) }
 }
 
-/** Projection des seuls comptes courants : sert à l'alerte de découvert. */
-export function liquidProjection(db: Db, today: string, horizon = 3) {
-  const cur = currentPeriod(db, today)
-  return projectBalances(liquidBalance(db), getBudget(db, cur, addMonths(cur, horizon - 1)), cur)
-}
+const periodEnds = (f: Forecast) => f.periods.map((p) => ({ month: p.key, balance: p.balance, end: p.end, name: p.name }))
+/** Projection des seuls comptes courants (= forecast liquide) : sert à l'alerte de découvert. */
+export const liquidProjection = (db: Db, today: string, horizon = 3) => periodEnds(forecast(db, today, horizon, 'liquid'))
 
 /** Dépenses réelles du mois par catégorie principale, triées. */
 export function spendingByRoot(db: Db, month: string) {
@@ -87,7 +87,8 @@ export function sankeyData(db: Db, month: string, maxOut = 7) {
   if (rest > 0) outs.push({ name: 'Autres', value: rest })
   const inTotal = [...incomes.values()].reduce((s, v) => s + v, 0), outTotal = outs.reduce((s, o) => s + o.value, 0)
   const ins = [...incomes].map(([id, v]) => ({ name: id ? name(id) : 'Autres revenus', value: v }))
-  if (outTotal > inTotal) ins.push({ name: 'Puisé dans l’épargne', value: outTotal - inTotal })
+  const hasSavings = accountsIn(db, false).some((a) => a.type === 'epargne')
+  if (outTotal > inTotal) ins.push({ name: hasSavings ? 'Puisé dans l’épargne' : 'Dépensé au-delà des revenus', value: outTotal - inTotal })
   if (inTotal > outTotal) outs.push({ name: 'Épargne', value: inTotal - outTotal })
   const nodes = [...ins.map((i) => ({ name: i.name })), { name: 'Budget du mois' }, ...outs.map((o) => ({ name: o.name }))]
   const hub = ins.length

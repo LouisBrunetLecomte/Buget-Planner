@@ -8,7 +8,9 @@ import { addMonths, daysBetween, daysInMonth, endOfMonth, monthOf, today } from 
 import { formatMoney } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
-import { attempt, dayLabel, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { dayLabel, Empty, Money, PageHeader, useCategories } from '@/app/ui'
+import { monthLong, tickDue } from '@/app/periods'
+import { annualCost } from '@/core/recurring'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { freqLabel, KIND_LABEL, RecurringDialog, type RecurringDraft } from './RecurringDialog'
@@ -19,12 +21,14 @@ function inDays(d: string) { const n = daysBetween(today(), d); return n === 0 ?
 function Summary({ st }: { st: b.RecurringStatus[] }) {
   const act = st.filter((s) => s.r.active)
   const sum = (f: (s: b.RecurringStatus) => boolean) => act.filter(f).reduce((t, s) => t + s.monthly, 0)
+  // coût sur les 12 prochains mois, dates de fin respectées (un remboursement qui s'arrête en mars ne compte pas toute l'année)
+  const year = (f: (s: b.RecurringStatus) => boolean) => act.filter(f).reduce((t, s) => t + annualCost(s.r, today()), 0)
   const abo = sum((s) => s.r.kind === 'abonnement'), fixes = sum((s) => s.r.kind !== 'revenu'), rev = sum((s) => s.r.kind === 'revenu')
   const provision = sum((s) => s.r.kind !== 'revenu' && (s.r.freq === 'year' || (s.r.freq === 'month' && s.r.interval >= 3)))
   const cards: [string, number, string][] = [
     ['Revenus récurrents', rev, 'par mois'],
-    ['Charges fixes', fixes, `par mois, abonnements compris · ${formatMoney(fixes * 12)} par an`],
-    ['Abonnements', abo, `par mois · ${formatMoney(abo * 12)} par an`],
+    ['Charges fixes', fixes, `par mois, abonnements compris · ${formatMoney(year((s) => s.r.kind !== 'revenu'))} sur 12 mois`],
+    ['Abonnements', abo, `par mois · ${formatMoney(year((s) => s.r.kind === 'abonnement'))} sur 12 mois`],
     ['À provisionner', provision, 'par mois pour les charges trimestrielles/annuelles'],
   ]
   return (
@@ -50,7 +54,7 @@ function List({ st, edit }: { st: b.RecurringStatus[]; edit: (d: RecurringDraft)
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => edit(r)}>
                 <span className="font-medium">{r.name}</span>{' '}
                 <Badge variant="outline">{KIND_LABEL[r.kind]}</Badge>
-                <span className="block text-xs text-muted-foreground">{freqLabel(r.freq, r.interval)}{r.freq === 'month' ? `, ${dayLabel(r.dayOfMonth ?? Number(r.startDate.slice(8, 10)))}` : ''}{label(r.categoryId) ? ` · ${label(r.categoryId)}` : ''}{r.freq !== 'month' || r.interval !== 1 ? ` · ${formatMoney(monthly)}/mois` : ''}</span>
+                <span className="block text-xs text-muted-foreground">{freqLabel(r.freq, r.interval)}{r.freq === 'month' ? `, ${dayLabel(r.dayOfMonth ?? Number(r.startDate.slice(8, 10)))}` : ''}{label(r.categoryId) ? ` · ${label(r.categoryId)}` : ''}{r.freq !== 'month' || r.interval !== 1 ? ` · ${formatMoney(monthly)}/mois` : ''}{r.endDate ? ` · jusqu’au ${fmtDay(r.endDate)} ${r.endDate.slice(0, 4)}` : ''}</span>
               </button>
               <div className="flex flex-wrap items-center gap-1.5 text-xs">
                 {increase && <Badge variant="outline" className="border-[var(--viz-critical)]">▲ Hausse : {formatMoney(increase.from)} → {formatMoney(increase.to)}</Badge>}
@@ -60,7 +64,7 @@ function List({ st, edit }: { st: b.RecurringStatus[]; edit: (d: RecurringDraft)
                 {next && r.active && (
                   <label className="flex items-center gap-1.5" title={`Coche quand c’est ${r.amount > 0 ? 'reçu' : 'payé'}`}>
                     <Checkbox aria-label={`${r.name} du ${fmtDay(next)} ${r.amount > 0 ? 'reçu' : 'payé'}`} checked={false}
-                      onCheckedChange={(v) => v === true && attempt(() => mutate((d) => b.tickOccurrence(d, r.id, next, today()), { label: `${r.name} ${r.amount > 0 ? 'reçu' : 'payé'}` }), `${r.name} du ${fmtDay(next)} : ${r.amount > 0 ? 'reçu' : 'payé'}`)} />
+                      onCheckedChange={(v) => v === true && tickDue(r.id, r.name, next, r.amount > 0 ? 'reçu' : 'payé')} />
                     <span className={cn('text-muted-foreground', soon && 'font-medium text-foreground')}>{fmtDay(next)} ({inDays(next)})</span>
                   </label>
                 )}
@@ -86,7 +90,7 @@ function Calendar() {
     <>
       <div className="mb-3 flex items-center gap-2">
         <Button size="icon" variant="outline" aria-label="Mois précédent" onClick={() => setMonth(addMonths(month, -1))}><ChevronLeft /></Button>
-        <span className="w-40 text-center font-medium capitalize">{new Date(`${month}-15`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</span>
+        <span className="w-40 text-center font-medium">{monthLong(month)}</span>
         <Button size="icon" variant="outline" aria-label="Mois suivant" onClick={() => setMonth(addMonths(month, 1))}><ChevronRight /></Button>
         <span className="ml-auto text-sm text-muted-foreground">Solde des échéances : <Money cents={total} /></span>
       </div>
@@ -109,7 +113,7 @@ function Calendar() {
           )
         })}
       </ol>
-      <p className="mt-2 text-xs text-muted-foreground">Barré = prélèvement retrouvé dans tes opérations.</p>
+      <p className="mt-2 text-xs text-muted-foreground">Barré = déjà payé ou reçu (coché, ou retrouvé dans le Journal).</p>
     </>
   )
 }

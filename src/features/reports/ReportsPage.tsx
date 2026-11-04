@@ -10,7 +10,8 @@ import * as x from '@/db/extrasRepo'
 import { currentPeriod } from '@/db/budgetRepo'
 import { useDb } from '@/app/store'
 import { download } from '@/app/files'
-import { Money, PageHeader } from '@/app/ui'
+import { Money, PageHeader, MonthPicker } from '@/app/ui'
+import { usePeriodTitle } from '@/app/periods'
 
 function Fiscal() {
   const { db, version } = useDb()
@@ -73,6 +74,7 @@ function Freelance() {
 
 export function ReportsPage() {
   const { db } = useDb()
+  const title = usePeriodTitle()
   const [month, setMonth] = useState(() => addMonths(currentPeriod(db, today()), -1)), [year, setYear] = useState(() => Number(today().slice(0, 4)))
   const run = async (f: () => Promise<void> | void) => { try { await f() } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) } }
   return (
@@ -82,7 +84,7 @@ export function ReportsPage() {
         <Card>
           <CardHeader><CardTitle>Rapports PDF</CardTitle><CardDescription>Générés sur ton appareil.</CardDescription></CardHeader>
           <CardContent className="grid gap-3 text-sm">
-            <div className="flex flex-wrap items-center gap-2"><Input type="month" aria-label="Mois du rapport" className="w-44" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+            <div className="flex flex-wrap items-center gap-2"><MonthPicker label="Période du rapport" value={month} onChange={(m) => m && setMonth(m)} format={(m) => title(m)} />
               <Button size="sm" onClick={() => run(async () => { const r = (await import('./pdfReport')).monthlyReport(db, month); r.pdf.save(r.name) })}><FileDown />Rapport mensuel</Button></div>
             <div className="flex flex-wrap items-center gap-2"><Input type="number" aria-label="Année du bilan" className="w-24" value={year} onChange={(e) => setYear(Number(e.target.value) || year)} />
               <Button size="sm" onClick={() => run(async () => { const r = (await import('./pdfReport')).annualReport(db, year); r.pdf.save(r.name) })}><FileDown />Bilan annuel</Button></div>

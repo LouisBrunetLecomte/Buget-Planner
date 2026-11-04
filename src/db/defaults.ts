@@ -18,6 +18,7 @@ const TREE: [Kind, string, string, string[]][] = [
   ['depense', 'Impôts & taxes', '#475569', []],
   ['depense', 'Frais bancaires', '#dc2626', []],
   ['depense', 'Dons', '#059669', []],
+  ['depense', 'Remboursements / dettes', '#b45309', []],
   ['depense', 'Divers', '#6b7280', []],
   ['transfert', 'Virements internes', '#64748b', []],
 ]
@@ -34,7 +35,7 @@ const RULES: [string, string][] = [
   ['NETFLIX', 'Abonnements'], ['SPOTIFY', 'Abonnements'], ['DEEZER', 'Abonnements'], ['DISNEY PLUS', 'Abonnements'], ['CANAL', 'Abonnements'],
   ['PHARMACIE', 'Pharmacie'], ['DOCTOLIB', 'Médecin'], ['AMAZON', 'Shopping'], ['FNAC', 'High-tech'], ['IKEA', 'Maison'],
   ['DGFIP', 'Impôts & taxes'], ['IMPOT', 'Impôts & taxes'], ['COTISATION', 'Frais bancaires'], ['COMMISSION', 'Frais bancaires'],
-  ['CAF', 'CAF / aides'],
+  ['CAF', 'CAF / aides'], ['BOULANGERIE', 'Courses'], ['KEBAB', 'Restaurants'], ['SOIREE', 'Sorties'],
 ]
 
 export function seedDefaults(db: Db) {

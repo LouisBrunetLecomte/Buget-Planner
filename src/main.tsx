@@ -12,6 +12,6 @@ if (import.meta.env.PROD && !navigator.userAgent.includes('BugetMac')) setupPwa(
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
-    <Toaster richColors position="top-center" />
+    <Toaster richColors position="top-center" visibleToasts={2} />
   </StrictMode>,
 )

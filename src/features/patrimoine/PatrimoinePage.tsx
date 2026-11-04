@@ -14,7 +14,7 @@ import { formatMoney, parseAmount } from '@/core/money'
 import * as p from '@/db/planningRepo'
 import { currentPeriod } from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
-import { AccountSelect, attempt, DaySelect, Empty, Money, PageHeader } from '@/app/ui'
+import { AccountSelect, attempt, DaySelect, Empty, Money, MonthPicker, PageHeader } from '@/app/ui'
 
 const money = (s: string) => { const v = parseAmount(s); if (v === null || v < 0) throw new Error('Montant invalide'); return v }
 const pct = (s: string) => { const v = Number(s.replace(',', '.')); if (!(v >= 0 && v < 100)) throw new Error('Taux invalide'); return v }
@@ -184,7 +184,7 @@ function Debts() {
         <Input aria-label="Montant emprunté" placeholder="Emprunté €" inputMode="decimal" value={f.principal} onChange={(e) => setF({ ...f, principal: e.target.value })} required />
         <Input aria-label="Taux annuel" placeholder="Taux %" inputMode="decimal" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} required />
         <Input aria-label="Durée en mois" placeholder="Durée (mois)" type="number" value={f.months} onChange={(e) => setF({ ...f, months: e.target.value })} required />
-        <Input aria-label="Première échéance" type="month" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} required />
+        <MonthPicker label="Première échéance" value={f.start} onChange={(m) => m && setF({ ...f, start: m })} />
         <DaySelect value={payDay} onChange={setPayDay} allowNone />
         <Button type="submit">Ajouter</Button>
       </form>

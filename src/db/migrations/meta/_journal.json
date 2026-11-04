@@ -50,6 +50,13 @@
       "when": 1793715678218,
       "tag": "0006_solde_confirme",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793723294882,
+      "tag": "0007_virement_epargne",
+      "breakpoints": true
     }
   ]
 }

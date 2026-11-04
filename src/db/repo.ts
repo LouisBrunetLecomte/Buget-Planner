@@ -26,12 +26,14 @@ export const listAccounts = (db: Db) => db.select().from(account).orderBy(accoun
 /**
  * Solde « d'ouverture » effectif : si le solde a été saisi à une date (« 1 250 € aujourd'hui »), les opérations d'avant
  * (et celles du jour importées) y sont déjà comprises ; on les retranche. confirmBalance neutralise aussi ce qui était déjà
- * saisi ou coché le jour même. Ce qu'on saisit ou coche ensuite compte.
+ * saisi ou coché le jour même. Ce qu'on saisit ou coche ensuite compte, sauf une échéance due au plus tard ce jour-là :
+ * elle est déjà passée sur le compte, donc comprise dans le solde confirmé.
  */
 export function effectiveOpenings(db: Db): Map<string, number> {
   const rows = db.select({ id: account.id, open: account.openingBalance,
     before: sql<number>`coalesce(sum(case when ${account.balanceDate} is not null and (${transaction.date} < ${account.balanceDate}
-      or (${transaction.date} = ${account.balanceDate} and ${transaction.importKey} is not null)) then ${transaction.amount} else 0 end), 0)` })
+      or (${transaction.date} = ${account.balanceDate} and (${transaction.importKey} is not null
+        or (${transaction.plannedRef} like 'rec:%' and substr(${transaction.plannedRef}, -10) <= ${account.balanceDate})))) then ${transaction.amount} else 0 end), 0)` })
     .from(account).leftJoin(transaction, eq(transaction.accountId, account.id)).groupBy(account.id).all()
   return new Map(rows.map((r) => [r.id, r.open - r.before]))
 }
@@ -54,7 +56,9 @@ export function confirmBalance(db: Db, id: string, cents: number, date: string) 
   if (!Number.isInteger(cents)) throw new Error('Montant invalide')
   // les saisies/cochages déjà faits à cette date sont compris dans le montant de la banque : on les neutralise
   const sameDay = db.select({ s: sql<number>`coalesce(sum(${transaction.amount}), 0)` }).from(transaction)
-    .where(and(eq(transaction.accountId, id), eq(transaction.date, date), isNull(transaction.importKey))).get()!.s
+    .where(and(eq(transaction.accountId, id), eq(transaction.date, date), isNull(transaction.importKey),
+      // une échéance du jour (ou d'avant) cochée est déjà retirée par effectiveOpenings : ne pas la neutraliser deux fois
+      sql`not coalesce(${transaction.plannedRef} like 'rec:%' and substr(${transaction.plannedRef}, -10) <= ${date}, 0)`)).get()!.s
   db.update(account).set({ openingBalance: cents - sameDay, balanceDate: date, balanceSetAt: stamp(), updatedAt: now }).where(eq(account.id, id)).run()
 }
 
@@ -175,7 +179,8 @@ export function setSplits(db: Db, txId: string, parts: { categoryId: string; amo
     if (parts.length) { const err = validateSplits(tx.amount, parts); if (err) throw new Error(err) }
     t.delete(transactionSplit).where(eq(transactionSplit.transactionId, txId)).run()
     for (const p of parts) t.insert(transactionSplit).values({ transactionId: txId, ...p }).run()
-    t.update(transaction).set({ categoryId: null, updatedAt: now }).where(eq(transaction.id, txId)).run()
+    // sans ventilation, la catégorie de l'opération reste la sienne
+    if (parts.length) t.update(transaction).set({ categoryId: null, updatedAt: now }).where(eq(transaction.id, txId)).run()
   })
 }
 export const listSplitTxIds = (db: Db) => new Set(db.selectDistinct({ id: transactionSplit.transactionId }).from(transactionSplit).all().map((r) => r.id))

@@ -129,6 +129,7 @@ export const recurring = sqliteTable('recurring', {
   pattern: text('pattern'), // motif du libellé pour reconnaître les prélèvements
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   debtId: text('debt_id'), // mensualité d'un crédit (supprimée avec lui)
+  toAccountId: text('to_account_id').references(() => account.id, { onDelete: 'set null' }), // virement vers ce compte (épargne)
   ...stamps,
 })
 

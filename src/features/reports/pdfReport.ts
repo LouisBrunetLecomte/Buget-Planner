@@ -1,16 +1,16 @@
 import { jsPDF } from 'jspdf'
 import type { Db } from '@/db/client'
-import { getBudget, periodBounds } from '@/db/budgetRepo'
+import { getBudget, periodBounds, periodDay } from '@/db/budgetRepo'
+import { periodKeyFor, periodTitle } from '@/core/period'
 import { spendingByRoot } from '@/db/analyticsRepo'
 import { netWorth } from '@/db/planningRepo'
 import { listCategories } from '@/db/repo'
 import { formatRaw } from '@/core/money'
 import { savingsRate } from '@/core/analytics'
-import { today } from '@/core/dates'
+import { addMonths, today } from '@/core/dates'
 
 // Les polices standard du PDF ne connaissent pas les espaces fines insécables du format français
 const m = (c: number) => formatRaw(c).replace(/[  ]/g, ' ')
-const monthName = (mo: string) => new Date(`${mo}-15`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
 class Doc {
   pdf = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -60,7 +60,7 @@ export function monthlyReport(db: Db, month: string) {
   const name = (id: string) => cats.find((c) => c.id === id)?.name ?? 'Non catégorisé'
   const d = new Doc()
   const pb = periodBounds(db, month)
-  d.title(`Rapport mensuel : ${pb.label}`, pb.day > 1 ? `Du ${pb.start} au ${pb.end} (de paie à paie), montants en euros, virements internes exclus` : 'Budget personnel, montants en euros, virements internes exclus')
+  d.title(`Rapport mensuel : ${periodTitle(month, pb.day)}`, pb.day > 1 ? `Du ${pb.start} au ${pb.end} (de paie à paie), montants en euros, virements internes exclus` : 'Budget personnel, montants en euros, virements internes exclus')
   d.kpis([['Revenus', m(b.actualIncome)], ['Dépenses', m(b.actualExpense)], ['Épargne', m(b.actualIncome - b.actualExpense)], ['Taux d’épargne', `${Math.round(savingsRate([b]) * 100)} %`]])
   d.h('Dépenses par catégorie')
   d.bars(sp.rows.slice(0, 15).map((r) => [name(r.id), r.amount]), sp.total)
@@ -72,15 +72,16 @@ export function monthlyReport(db: Db, month: string) {
 }
 
 export function annualReport(db: Db, year: number) {
-  const months = getBudget(db, `${year}-01`, `${year}-12`), cats = listCategories(db)
+  const first = periodKeyFor(`${year}-01`, periodDay(db)) // les 12 périodes nommées dans l'année
+  const months = getBudget(db, first, addMonths(first, 11)), cats = listCategories(db)
   const inc = months.reduce((s, x) => s + x.actualIncome, 0), exp = months.reduce((s, x) => s + x.actualExpense, 0)
   const byCat = new Map<string, number>()
-  for (let k = 1; k <= 12; k++) for (const r of spendingByRoot(db, `${year}-${String(k).padStart(2, '0')}`).rows) byCat.set(r.id, (byCat.get(r.id) ?? 0) + r.amount)
+  for (let k = 0; k < 12; k++) for (const r of spendingByRoot(db, addMonths(first, k)).rows) byCat.set(r.id, (byCat.get(r.id) ?? 0) + r.amount)
   const d = new Doc()
   d.title(`Bilan annuel ${year}`, 'Budget personnel, montants en euros, virements internes exclus')
   d.kpis([['Revenus', m(inc)], ['Dépenses', m(exp)], ['Épargne', m(inc - exp)], ['Patrimoine net', m(netWorth(db, today()).net)]])
   d.h('Mois par mois')
-  d.table(['Mois', 'Revenus', 'Dépenses', 'Solde'], months.map((x) => [monthName(x.month), m(x.actualIncome), m(x.actualExpense), m(x.actualIncome - x.actualExpense)]), [60, 40, 40, 40])
+  d.table(['Mois', 'Revenus', 'Dépenses', 'Solde'], months.map((x) => [periodTitle(x.month, periodDay(db)), m(x.actualIncome), m(x.actualExpense), m(x.actualIncome - x.actualExpense)]), [60, 40, 40, 40])
   d.h('Dépenses de l’année par catégorie')
   d.bars([...byCat].sort((a, b) => b[1] - a[1]).map(([id, v]) => [cats.find((c) => c.id === id)?.name ?? 'Non catégorisé', v]), exp)
   return d.done(`bilan-${year}.pdf`)

@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { addMonths, monthOf, today } from '@/core/dates'
 import { formatMoney } from '@/core/money'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { listAccounts, listCategories, type Category } from '@/db/repo'
+import { cap, monthLong } from './periods'
 import { useDb } from './store'
 
 export function Money({ cents, currency = 'EUR', className, colored = true }: { cents: number; currency?: string; className?: string; colored?: boolean }) {
@@ -119,3 +123,23 @@ export function DaySelect({ value, onChange, id, allowNone, className }: { value
   )
 }
 export const dayLabel = (d: number) => (d >= 31 ? 'le dernier jour' : d === 1 ? 'le 1er' : `le ${d}`)
+
+/** Choix d'un mois en français : pas à pas ‹ › et liste (remplace <input type="month">, affiché en anglais). */
+export function MonthPicker({ value, onChange, label, format = monthLong, allLabel, id }:
+  { value: string; onChange: (m: string) => void; label: string; format?: (m: string) => string; allLabel?: string; id?: string }) {
+  const base = value || monthOf(today())
+  const opts = Array.from({ length: 49 }, (_, i) => addMonths(base, i - 24))
+  return (
+    <div role="group" aria-label={label} className="flex items-center gap-0.5 rounded-full bg-secondary p-0.5">
+      <Button type="button" size="icon-xs" variant="ghost" aria-label={`${label}, précédent`} onClick={() => onChange(addMonths(base, -1))}><ChevronLeft /></Button>
+      <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? '' : v)}>
+        <SelectTrigger id={id} aria-label={id ? undefined : label} size="sm" className="min-w-0 flex-1 justify-center border-0 bg-transparent shadow-none dark:bg-transparent"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {allLabel && <SelectItem value={NONE}>{allLabel}</SelectItem>}
+          {opts.map((m) => <SelectItem key={m} value={m}>{cap(format(m))}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Button type="button" size="icon-xs" variant="ghost" aria-label={`${label}, suivant`} onClick={() => onChange(addMonths(base, 1))}><ChevronRight /></Button>
+    </div>
+  )
+}

@@ -110,3 +110,8 @@ export function detectRecurring(txs: DetectTx[], today: string): Suggestion[] {
   }
   return out.sort((a, b) => a.amount - b.amount)
 }
+
+/** Coût réel sur les 12 prochains mois (aujourd'hui compris) : respecte la date de fin, contrairement à monthlyEquivalent × 12. */
+export function annualCost(r: Schedule & { amount: number }, today: string): number {
+  return occurrences(r, today, addDays(`${addMonths(monthOf(today), 12)}-01`, Number(today.slice(8, 10)) - 2)).length * r.amount
+}

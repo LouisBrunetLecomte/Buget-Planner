@@ -2,13 +2,13 @@ import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { asset, assetValue, debt, goal, goalContribution, recurring, savingsRule, scenario, transaction } from './schema'
 import { balances, listAccounts, listCategories } from './repo'
-import { currentPeriod, getBudget, resteAVivreFor, occurrencesBetween, listRecurring, liquidBalance, periodBounds, totalBalance } from './budgetRepo'
+import { currentPeriod, forecast, getBudget, periodBounds, periodDay, totalBalance } from './budgetRepo'
 import { balanceHistory } from './analyticsRepo'
-import { addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
+import { addDays, addMonths, daysInMonth, endOfMonth, monthOf } from '@/core/dates'
+import { periodKeyFor } from '@/core/period'
 import { amortize, balanceAt, type Loan } from '@/core/debt'
-import { dailyForecast, roundUp, simulate, suggestedMonthly, type Change } from '@/core/planning'
+import { roundUp, simulate, suggestedMonthly, type Change } from '@/core/planning'
 import { monthEnds } from '@/core/analytics'
-import { monthlyEquivalent } from '@/core/recurring'
 
 export type Goal = typeof goal.$inferSelect
 export type Debt = typeof debt.$inferSelect
@@ -23,6 +23,12 @@ export const deleteGoal = (db: Db, id: string) => db.delete(goal).where(eq(goal.
 export const addContribution = (db: Db, goalId: string, date: string, amount: number, note?: string) => {
   if (!Number.isInteger(amount) || amount === 0) throw new Error('Montant invalide')
   return db.insert(goalContribution).values({ goalId, date, amount, note: note ?? null }).run()
+}
+
+/** Ce que le budget dégage en moyenne par période à venir (prévision unique, hors période en cours). */
+export function monthlyMargin(db: Db, today: string, months = 6) {
+  const nets = scenarioBase(db, today, months + 1).base.slice(1).map((x) => x.net)
+  return nets.length ? Math.round(nets.reduce((s, n) => s + n, 0) / nets.length) : 0
 }
 
 export function goalsStatus(db: Db, today: string) {
@@ -114,33 +120,25 @@ export const saveScenario = (db: Db, s: { id?: string; name: string; changes: Ch
     : db.insert(scenario).values({ name: s.name, changes: s.changes }).run()
 export const deleteScenario = (db: Db, id: string) => db.delete(scenario).where(eq(scenario.id, id)).run()
 
-/** Base des simulations : solde des comptes courants + flux nets prévus par le budget (repli : moyenne des 3 derniers mois). */
+/** Base des simulations : la prévision unique des comptes courants, en variation de solde par période. */
 export function scenarioBase(db: Db, today: string, months: number) {
-  const cur = currentPeriod(db, today)
-  const plan = getBudget(db, cur, addMonths(cur, months - 1))
-  const hist = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
-  const avgNet = Math.round(hist.reduce((s, m) => s + m.actualIncome - m.actualExpense, 0) / Math.max(1, hist.length))
-  // période en cours : seulement ce qui reste à recevoir / à payer (le déjà payé est dans le solde de départ)
-  const toCome = (m: (typeof plan)[number]) => m.rows.reduce((t, r) => t + (r.kind === 'revenu' ? r.toCome : -r.toCome), 0)
-  const base = plan.map((m) => ({ month: m.month, net: m.month === cur ? toCome(m) : m.rows.length ? m.plannedIncome - m.plannedExpense : avgNet }))
-  return { start: liquidBalance(db), base }
+  const f = forecast(db, today, months, 'liquid')
+  const base = f.periods.map((p, i) => ({ month: p.key, net: p.balance - (i ? f.periods[i - 1]!.balance : f.start), name: p.name, end: p.end }))
+  return { start: f.start, base, confidence: f.confidence, dailyEveryday: f.dailyEveryday }
 }
+/** Les scénarios stockent le mois affiché (« avril 2027 ») : on le ramène à la clé de la période correspondante. */
 export const runScenario = (db: Db, today: string, months: number, changes: Change[]) => {
-  const { start, base } = scenarioBase(db, today, months)
-  return simulate(start, base, changes)
+  const { start, base } = scenarioBase(db, today, months), day = periodDay(db), k = (m: string) => periodKeyFor(m, day)
+  const keyed = changes.map((c): Change => c.type === 'ponctuel' ? { ...c, month: k(c.month) } : c.type === 'mensuel' ? { ...c, from: k(c.from), to: c.to ? k(c.to) : c.to } : { ...c, from: k(c.from) })
+  return simulate(start, base, keyed)
 }
 
 // ---------- calendrier jour par jour ----------
-/** Solde des comptes courants jour par jour : échéances suivies + dépense courante moyenne (hors charges fixes). */
+/** Solde des comptes courants jour par jour : la prévision unique, sur `days` jours. */
 export function financialCalendar(db: Db, today: string, days = 60) {
-  const cur = currentPeriod(db, today)
-  const hist = getBudget(db, addMonths(cur, -3), addMonths(cur, -1))
-  const avgExpense = hist.reduce((s, m) => s + m.actualExpense, 0) / Math.max(1, hist.length)
-  const fixed = -listRecurring(db).filter((r) => r.active && r.amount < 0).reduce((s, r) => s + monthlyEquivalent(r, r.amount), 0)
-  const rav = resteAVivreFor(db, today)
-  const dailyVariable = rav.envelopes > 0 ? Math.round(rav.envelopes / rav.daysLeft) : Math.max(0, Math.round((avgExpense - fixed) / 30.44))
-  const to = new Date(Date.parse(today) + (days - 1) * 86_400_000).toISOString().slice(0, 10)
-  const events = occurrencesBetween(db, today, to).filter((o) => !o.paid).map((o) => ({ date: o.date, label: o.recurring.name, amount: o.recurring.amount }))
-  return { dailyVariable, days: dailyForecast(liquidBalance(db), today, days, events, dailyVariable) }
+  let horizon = 1
+  while (periodBounds(db, addMonths(currentPeriod(db, today), horizon - 1)).end < addDays(today, days - 1)) horizon++
+  const f = forecast(db, today, horizon, 'liquid')
+  return { dailyVariable: f.dailyEveryday, confidence: f.confidence, days: f.days.slice(0, days) }
 }
 export const accountsForGoals = (db: Db) => listAccounts(db).filter((a) => !a.archived)

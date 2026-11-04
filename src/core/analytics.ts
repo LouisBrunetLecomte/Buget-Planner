@@ -107,7 +107,7 @@ export interface AlertInput {
   catLabel: (id: string) => string
   liquid: number
   resteAVivre: number
-  liquidProjection: { month: string; balance: number }[]
+  liquidProjection: { month: string; balance: number; end?: string }[] // end = veille de la paie
   upcoming: { name: string; date: string; amount: number }[]   // échéances non réglées à venir
   missedIncome: { name: string; date: string; amount: number; imported?: boolean }[]
   anomalies: Anomaly[]
@@ -132,7 +132,7 @@ export function computeAlerts(i: AlertInput, s: AlertSettings): Alert[] {
   if (s.enabled.decouvert) {
     if (i.resteAVivre < 0) out.push({ id: `decouvert-mois:${i.period}`, type: 'decouvert', severity: 'critique', title: 'Découvert probable avant ta prochaine paie', body: `Après les échéances à venir, il manquerait ${eur(-i.resteAVivre)}.`, href: '#/recurrences' })
     const neg = i.liquidProjection.find((p) => p.balance < 0 && p.month > i.period)
-    if (neg) out.push({ id: `decouvert:${neg.month}`, type: 'decouvert', severity: 'attention', title: `Découvert probable fin ${new Date(neg.month + '-15').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`, body: `Comptes courants projetés à ${eur(neg.balance)} si le budget est suivi.`, href: '#/analyses' })
+    if (neg) out.push({ id: `decouvert:${neg.month}`, type: 'decouvert', severity: 'attention', title: neg.end ? `Découvert probable avant ta paie du ${new Date(addDays(neg.end, 1)).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })}` : `Découvert probable fin ${new Date(neg.month + '-15').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`, body: `Comptes courants projetés à ${eur(neg.balance)} si le budget est suivi.`, href: '#/analyses' })
   }
   if (s.enabled.echeance) for (const u of i.upcoming) {
     if (u.amount >= 0 || daysBetween(i.today, u.date) > s.daysBefore) continue

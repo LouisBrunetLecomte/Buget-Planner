@@ -13,7 +13,9 @@ import { creditPayment, type Change } from '@/core/planning'
 import { formatMoney, parseAmount } from '@/core/money'
 import * as p from '@/db/planningRepo'
 import { mutate, useDb } from '@/app/store'
-import { attempt, Empty, Money, PageHeader } from '@/app/ui'
+import { attempt, Empty, Money, MonthPicker, PageHeader } from '@/app/ui'
+import { usePeriodTitle } from '@/app/periods'
+import { forecast } from '@/db/analyticsRepo'
 import { cn } from '@/lib/utils'
 
 // 3 séries maximum (base + 2 scénarios) : au-delà, les couleurs ne restent pas distinguables pour tous
@@ -50,15 +52,15 @@ function ChangeForm({ onAdd }: { onAdd: (c: Change) => void }) {
   return (
     <div className="grid gap-2 rounded-md border p-3 text-sm">
       <div className="flex flex-wrap gap-1">{PRESETS.map(([l, v]) => <Button key={l} type="button" size="xs" variant="outline" onClick={() => { setType(v.type); setF({ ...f, ...v }) }}>{l}</Button>)}</div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-[9rem_1fr_7rem_8rem_8rem]">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-[9rem_1fr_7rem_12rem_12rem]">
         <Select value={type} onValueChange={(v) => setType(v as Change['type'])}>
           <SelectTrigger aria-label="Type de changement" className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="mensuel">Chaque mois</SelectItem><SelectItem value="ponctuel">Ponctuel</SelectItem><SelectItem value="credit">Crédit</SelectItem></SelectContent>
         </Select>
         <Input aria-label="Libellé" placeholder="Libellé" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} />
         <Input aria-label={type === 'credit' ? 'Montant emprunté' : 'Montant (négatif = dépense)'} placeholder={type === 'credit' ? 'Emprunté €' : '± €'} inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
-        <Input aria-label={type === 'ponctuel' ? 'Mois' : 'À partir de'} type="month" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} />
-        {type === 'mensuel' && <Input aria-label="Jusqu’à (optionnel)" type="month" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} />}
+        <MonthPicker label={type === 'ponctuel' ? 'Mois' : 'À partir de'} value={f.from} onChange={(m) => m && setF({ ...f, from: m })} />
+        {type === 'mensuel' && <MonthPicker label="Jusqu’à (optionnel)" allLabel="Sans fin" value={f.to} onChange={(m) => setF({ ...f, to: m })} />}
         {type === 'credit' && <div className="flex gap-1"><Input aria-label="Taux %" placeholder="%" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} /><Input aria-label="Durée en mois" placeholder="mois" value={f.months} onChange={(e) => setF({ ...f, months: e.target.value })} /></div>}
       </div>
       <Button type="button" size="sm" variant="secondary" className="justify-self-start" onClick={submit}>Ajouter ce changement</Button>
@@ -68,6 +70,7 @@ function ChangeForm({ onAdd }: { onAdd: (c: Change) => void }) {
 
 function Scenarios() {
   const { db, version } = useDb()
+  const title = usePeriodTitle(), ps = (m: string) => title(m, 'short') // les résultats sont rangés par période (de paie à paie)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const list = useMemo(() => p.listScenarios(db), [db, version])
   const [selected, setSelected] = useState<string[]>([])
@@ -117,7 +120,7 @@ function Scenarios() {
         )}
         <Card>
           <CardHeader><CardTitle>Solde des comptes courants, fin de période</CardTitle>
-            <CardDescription>Base : ce qui reste à payer et recevoir, puis ton budget prévu (à défaut, ta moyenne passée). Horizon
+            <CardDescription>Base : la même prévision que l’Aperçu (charges, budget, ponctuels et dépenses du quotidien). Horizon
               {[12, 24].map((h) => <Button key={h} size="xs" className="ml-1" variant={horizon === h ? 'default' : 'outline'} aria-pressed={horizon === h} onClick={() => setHorizon(h)}>{h} mois</Button>)}</CardDescription></CardHeader>
           <CardContent>
             <div className="mb-2 flex flex-wrap gap-4">{series.map((s, k) => <LegendItem key={s.name} color={SERIES[k]!} label={s.name} line />)}</div>
@@ -125,20 +128,20 @@ function Scenarios() {
               <ResponsiveContainer>
                 <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="month" tickFormatter={monthShort} {...axisProps} />
+                  <XAxis dataKey="month" tickFormatter={ps} {...axisProps} />
                   <YAxis tickFormatter={axisEuro} width={48} {...axisProps} />
                   <ReferenceLine y={0} stroke="var(--viz-axis)" />
-                  <Tooltip content={<ChartTooltip labelFormat={monthShort} />} />
+                  <Tooltip content={<ChartTooltip labelFormat={ps} />} />
                   {series.map((s, k) => <Line key={s.name} dataKey={`s${k}`} name={s.name} stroke={SERIES[k]} strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--card)' }} />)}
                 </LineChart>
               </ResponsiveContainer>
             </div>
             <ul className="mt-2 grid gap-1 text-sm">
               {series.map((s) => { const m = minOf(s), end = s.data.at(-1)!; return (
-                <li key={s.name}><span className="font-medium">{s.name}</span> : fin à <Money cents={end.balance} colored={false} />, point bas <Money cents={m.balance} colored={false} className={cn(m.balance < 0 && 'text-destructive font-medium')} /> en {monthShort(m.month)}{m.balance < 0 && ' ⚠ découvert'}</li>
+                <li key={s.name}><span className="font-medium">{s.name}</span> : fin à <Money cents={end.balance} colored={false} />, point bas <Money cents={m.balance} colored={false} className={cn(m.balance < 0 && 'text-destructive font-medium')} /> en {ps(m.month)}{m.balance < 0 && ' ⚠ découvert'}</li>
               ) })}
             </ul>
-            <TableView head={['Mois', ...series.map((s) => s.name)]} rows={series[0]!.data.map((pt, i) => [monthShort(pt.month), ...series.map((s) => formatMoney(s.data[i]!.balance))])} />
+            <TableView head={['Mois', ...series.map((s) => s.name)]} rows={series[0]!.data.map((pt, i) => [ps(pt.month), ...series.map((s) => formatMoney(s.data[i]!.balance))])} />
           </CardContent>
         </Card>
       </div>
@@ -146,18 +149,23 @@ function Scenarios() {
   )
 }
 
+/** Jour par jour : la même prévision que l'Aperçu, détaillée au jour (les veilles de paie sont toujours listées). */
 function DayByDay() {
   const { db, version } = useDb()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const c = useMemo(() => p.financialCalendar(db, today(), 60), [db, version])
+  const c = useMemo(() => {
+    const f = forecast(db, today(), 3), last = new Date(Date.parse(today()) + 59 * 86_400_000).toISOString().slice(0, 10)
+    return { f, days: f.days.filter((d) => d.date <= last), ends: new Set(f.periods.map((x) => x.end)) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version])
   const firstNeg = c.days.find((d) => d.balance < 0)
   const data = c.days.map((d) => ({ date: d.date, solde: d.balance / 100 }))
   const fmt = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
   return (
     <Card>
       <CardHeader><CardTitle>Calendrier financier : 60 prochains jours</CardTitle>
-        <CardDescription>Comptes courants. Échéances datées + dépenses courantes estimées à {formatMoney(c.dailyVariable)} par jour (ton budget pas encore dépensé, réparti jusqu’à la prochaine paie ; à défaut, ta moyenne passée).</CardDescription></CardHeader>
+        <CardDescription>Comptes courants. Échéances datées, budget restant et dépenses du quotidien{c.f.dailyEveryday > 0 ? <> estimées à {formatMoney(c.f.dailyEveryday)} par jour d’après tes dépenses réelles</> : ''}. Les mêmes chiffres que les Prévisions de l’Aperçu.</CardDescription></CardHeader>
       <CardContent>
+        {c.f.confidence === 'none' && <p role="status" className="mb-2 text-sm text-amber-800 dark:text-amber-300">Tes dépenses du quotidien ne sont pas encore comptées : ce solde est trop haut.</p>}
         {firstNeg && <p role="alert" className="mb-2 text-sm text-destructive">⚠ Solde négatif probable à partir du {fmt(firstNeg.date)}.</p>}
         <div className="h-56">
           <ResponsiveContainer>
@@ -172,10 +180,10 @@ function DayByDay() {
           </ResponsiveContainer>
         </div>
         <ol className="mt-3 grid gap-1 text-sm">
-          {c.days.filter((d) => d.events.length).map((d) => (
+          {c.days.filter((d) => d.events.length || c.ends.has(d.date)).map((d) => (
             <li key={d.date} className="grid grid-cols-[5rem_1fr_auto] gap-2 border-t pt-1">
               <span className="text-muted-foreground">{fmt(d.date)}</span>
-              <span>{d.events.map((e) => `${e.label} ${formatMoney(e.amount)}`).join(' · ')}</span>
+              <span>{[...d.events.map((e) => `${e.label} ${formatMoney(e.amount)}`), ...(c.ends.has(d.date) ? ['veille de paie'] : [])].join(' · ')}</span>
               <Money cents={d.balance} colored={false} className={cn(d.balance < 0 && 'text-destructive')} />
             </li>
           ))}

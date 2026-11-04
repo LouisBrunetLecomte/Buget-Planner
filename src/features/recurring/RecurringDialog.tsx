@@ -11,7 +11,8 @@ import type { Freq } from '@/core/recurring'
 import { RECURRING_KINDS } from '@/db/schema'
 import * as b from '@/db/budgetRepo'
 import { mutate } from '@/app/store'
-import { AccountSelect, attempt, CategorySelect, DaySelect } from '@/app/ui'
+import { AccountSelect, attempt, CategorySelect, DaySelect, MonthPicker } from '@/app/ui'
+import { monthLong } from '@/app/periods'
 
 export const KIND_LABEL = { revenu: 'Revenu', charge: 'Charge fixe', abonnement: 'Abonnement' } as const
 const PRESETS: Record<string, [Freq, number]> = { hebdo: ['week', 1], mensuel: ['month', 1], trimestriel: ['month', 3], semestriel: ['month', 6], annuel: ['year', 1] }
@@ -96,14 +97,14 @@ export function RecurringDialog({ draft, onClose }: { draft: RecurringDraft; onC
           <div className="grid grid-cols-2 gap-3">
             {monthly ? <>
               <div className="grid gap-1.5"><Label htmlFor="rday">{kind === 'revenu' ? 'Arrive' : 'Prélevé'}{interval > 1 ? ` (tous les ${interval} mois)` : ' chaque mois'}</Label><DaySelect id="rday" value={day} onChange={(d) => d && setDay(d)} /></div>
-              <div className="grid gap-1.5"><Label htmlFor="rsm">À partir de</Label><Input id="rsm" type="month" value={startMonth} onChange={(e) => e.target.value && setStartMonth(e.target.value)} disabled={!!draft.id && timingChanged} /></div>
+              <div className="grid gap-1.5"><Label htmlFor="rsm">À partir de</Label>{draft.id && timingChanged ? <span className="text-sm">{monthLong(startMonth)}</span> : <MonthPicker id="rsm" label="À partir de" value={startMonth} onChange={(m) => m && setStartMonth(m)} />}</div>
             </> : <div className="grid gap-1.5"><Label htmlFor="rs">Première date</Label><Input id="rs" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></div>}
             <div className="grid gap-1.5"><Label htmlFor="re">Fin (optionnel)</Label><Input id="re" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
           </div>
           {timingChanged && (
             <div className="grid gap-1.5 rounded-md border border-primary/40 bg-primary/5 p-2 text-sm">
               <Label htmlFor="rfrom">Appliquer ce changement à partir de</Label>
-              <Input id="rfrom" type="month" className="w-44" value={applyFrom} onChange={(e) => e.target.value && setApplyFrom(e.target.value)} />
+              <div className="w-56"><MonthPicker id="rfrom" label="Appliquer à partir de" value={applyFrom} onChange={(m) => m && setApplyFrom(m)} /></div>
               <span className="text-xs text-muted-foreground">Les mois d’avant gardent l’ancien montant. Budget, calendrier, reste à vivre et prévisions se mettent à jour automatiquement.</span>
             </div>
           )}

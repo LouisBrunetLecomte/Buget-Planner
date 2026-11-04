@@ -47,10 +47,10 @@ describe('import', () => {
 
 it('apprend une règle d’une correction', () => {
   const acc = repo.createAccount(db, { name: 'Courant', type: 'courant' })
-  const t = repo.addTransaction(db, { accountId: acc.id, date: '2026-10-01', amount: -1000, label: 'CB BOULANGERIE MARIE 01/10' })
+  const t = repo.addTransaction(db, { accountId: acc.id, date: '2026-10-01', amount: -1000, label: 'CB PRIMEUR MARIE 01/10' })
   expect(t.categoryId).toBeNull()
-  expect(repo.updateTransaction(db, t.id, { categoryId: cats.get('Courses')! }).learned).toBe('BOULANGERIE MARIE')
-  const t2 = repo.addTransaction(db, { accountId: acc.id, date: '2026-10-08', amount: -800, label: 'CB BOULANGERIE MARIE 08/10' })
+  expect(repo.updateTransaction(db, t.id, { categoryId: cats.get('Courses')! }).learned).toBe('PRIMEUR MARIE')
+  const t2 = repo.addTransaction(db, { accountId: acc.id, date: '2026-10-08', amount: -800, label: 'CB PRIMEUR MARIE 08/10' })
   expect(t2.categoryId).toBe(cats.get('Courses'))
   // corriger une enseigne connue (CARREFOUR → Shopping) l'emporte sur la règle par défaut
   const c = repo.addTransaction(db, { accountId: acc.id, date: '2026-10-08', amount: -800, label: 'CARREFOUR' })

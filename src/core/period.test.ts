@@ -17,3 +17,18 @@ it('jour 1 = mois classiques ; dernier jour du mois ramené', () => {
   expect(periodEnd('2027-01', 31)).toBe('2027-02-27')
   expect(periodOf('2027-02-28', 31)).toBe('2027-02')
 })
+
+it('nom affiché : le mois où tombe la majorité des jours (paie le 28 → novembre)', async () => {
+  const { periodName, periodKeyFor, periodTitle } = await import('./period')
+  const { addMonths } = await import('./dates')
+  expect(periodName('2026-10', 28)).toBe('2026-11')
+  expect(periodName('2026-10', 12)).toBe('2026-10')
+  expect(periodName('2027-03', 31)).toBe('2027-04')
+  expect(periodName('2026-11', 1)).toBe('2026-11')
+  expect(periodTitle('2026-10', 28)).toBe('novembre 2026')
+  expect(periodTitle('2026-10', 28, 'short')).toBe('nov. 26')
+  for (let day = 1; day <= 31; day++) for (let i = 0; i < 24; i++) {
+    const key = addMonths('2026-01', i)
+    expect(periodKeyFor(periodName(key, day), day)).toBe(key)
+  }
+})

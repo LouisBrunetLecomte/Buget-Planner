@@ -147,3 +147,11 @@ it('chiffrement : aller-retour et mauvais mot de passe', async () => {
   expect(new TextDecoder().decode(await open(await deriveKey('correct horse', salt), sealed))).toBe('secret')
   await expect(open(await deriveKey('mauvais', salt), sealed)).rejects.toThrow()
 }, 20_000)
+
+it('coût sur 12 mois : respecte la date de fin', async () => {
+  const { annualCost } = await import('./recurring')
+  const r = { freq: 'month' as const, interval: 1, startDate: '2026-09-01', endDate: '2027-01-01', amount: -5000 }
+  expect(annualCost(r, '2026-11-03')).toBe(-10000) // déc. et janv. seulement
+  expect(annualCost({ ...r, endDate: null }, '2026-11-03')).toBe(-60000)
+  expect(annualCost({ ...r, freq: 'year', startDate: '2026-12-24', endDate: null }, '2026-11-03')).toBe(-5000)
+})
