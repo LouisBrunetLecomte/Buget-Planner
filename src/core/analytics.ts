@@ -94,10 +94,11 @@ export interface AlertSettings {
   lowBalance: number      // centimes
   daysBefore: number      // prélèvement à venir
   notifications: boolean
+  reminderHour: number | null // rappel quotidien de noter ses dépenses (heure locale), null = désactivé
 }
 export const DEFAULT_ALERTS: AlertSettings = {
   enabled: { budget: true, solde: true, decouvert: true, echeance: true, revenu: true, anomalie: true },
-  budgetWarnPct: 80, lowBalance: 20_000, daysBefore: 3, notifications: false,
+  budgetWarnPct: 80, lowBalance: 20_000, daysBefore: 3, notifications: false, reminderHour: null,
 }
 
 export interface AlertInput {

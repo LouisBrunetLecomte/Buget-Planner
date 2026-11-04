@@ -13,6 +13,9 @@ import { mutate, useDb } from '@/app/store'
 import { attempt, Empty, useAccounts, useCategories } from '@/app/ui'
 import { tickDue } from '@/app/periods'
 import { cn } from '@/lib/utils'
+import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { axisEuro, axisProps, ChartTooltip, gridProps, LegendItem } from '@/components/charts'
+import { periodReport } from '@/db/coachRepo'
 
 const fmtDay = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 const euros = (c: number) => formatMoney(c).replace(/,00(?=\s€)/, '') // « 412 € » plutôt que « 412,00 € » dans les phrases
@@ -31,7 +34,8 @@ function Balance() {
   const [values, setValues] = useState<Record<string, string>>({})
   const d = useMemo(() => {
     const bal = balances(db), x = b.resteAVivreFor(db, today())
-    return { bal, x, payday: addDays(x.end, 1) }
+    const libre = x.liquid - x.dated - x.oneOff - x.envelopes
+    return { bal, x, libre, perDay: Math.floor(Math.max(0, libre) / x.daysLeft), payday: addDays(x.end, 1), nextIncome: b.occurrencesBetween(db, today(), x.end).find((o) => !o.paid && o.recurring.amount > 0) ?? null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, version])
   const confirmed = accounts.map((a) => a.balanceSetAt?.slice(0, 10) ?? null)
@@ -50,33 +54,150 @@ function Balance() {
     if (ok) setEditing(false)
   }
   if (!accounts.length) return <Empty>Ajoute ton compte courant avec son solde dans <a className="underline" href="#/comptes">Comptes</a>.</Empty>
+  const libre = d.libre
   return (
-    <section className="px-5 pt-6 pb-10 text-center">
-      <p className="text-[17px] text-muted-foreground">{accounts.length > 1 ? 'Sur tes comptes' : 'Sur ton compte'}</p>
-      {editing ? (
-        <form className="mx-auto my-3 grid max-w-xs gap-2" onSubmit={(e) => { e.preventDefault(); save() }}>
-          {accounts.map((a) => (
-            <label key={a.id} className="grid gap-1 text-left text-xs text-muted-foreground">{a.name} : ce qu’affiche ta banque maintenant
-              <Input autoFocus={a === accounts[0]} inputMode="decimal" className="h-11 text-center text-2xl font-semibold text-foreground" value={values[a.id] ?? ''} onChange={(e) => setValues({ ...values, [a.id]: e.target.value })} />
-            </label>
-          ))}
-          <div className="flex justify-center gap-2"><Button type="submit">Enregistrer</Button><Button type="button" variant="ghost" onClick={() => setEditing(false)}>Annuler</Button></div>
-        </form>
-      ) : (
-        <button type="button" onClick={startEdit} className="my-2 block w-full text-6xl font-semibold tracking-tight md:text-[80px] md:leading-none" title="Corriger avec le montant de ta banque">{formatMoney(d.x.liquid)}</button>
-      )}
-      {!editing && (stale
-        ? <button type="button" onClick={startEdit} className="text-sm text-amber-700 underline dark:text-amber-400">Vérifie ce montant avec ta banque et corrige-le si besoin</button>
-        : <p className="text-xs text-muted-foreground">Confirmé le {new Date(last!).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: 'UTC' })} · touche le montant pour le corriger</p>)}
-      {/* une seule réponse à « combien il me reste » : à vivre = solde + à recevoir − à payer − budget restant */}
-      {d.x.amount >= 0
-        ? <p className="mt-6 text-[17px] text-muted-foreground">À vivre jusqu’à ta paie du {fmtDay(d.payday)} : <strong className="font-medium text-foreground">{euros(d.x.amount)}</strong> · {euros(d.x.perDay)}/jour</p>
-        : <p className="mt-6 text-[17px] text-destructive">Il manque <strong className="font-medium">{euros(-d.x.amount)}</strong> d’ici ta paie du {fmtDay(d.payday)}</p>}
-      {d.x.incoming > 0 && <p className="mt-1 text-xs text-muted-foreground">dont {euros(d.x.incoming)} attendus, pas encore reçus</p>}
-      {d.x.confidence !== 'none' && d.x.dailyEveryday > 0 && (
-        <p className="mt-1 text-xs text-muted-foreground" data-testid="forecast-end">Si tu dépenses comme d’habitude ({euros(d.x.dailyEveryday)}/jour) : ≈ {formatMoney(d.x.forecastEnd)} avant ta paie</p>
-      )}
+    <section className="grid gap-4 md:grid-cols-2">
+      <div className="rounded-3xl bg-card p-7 shadow-[0_1px_3px_rgba(0,0,0,0.06)] dark:shadow-none">
+        <p className="text-[15px] text-muted-foreground">{accounts.length > 1 ? 'Sur tes comptes' : 'Sur ton compte'}</p>
+        {editing ? (
+          <form className="my-3 grid gap-2" onSubmit={(e) => { e.preventDefault(); save() }}>
+            {accounts.map((a) => (
+              <label key={a.id} className="grid gap-1 text-xs text-muted-foreground">{a.name} : ce qu’affiche ta banque maintenant
+                <Input autoFocus={a === accounts[0]} inputMode="decimal" className="h-11 text-2xl font-semibold text-foreground" value={values[a.id] ?? ''} onChange={(e) => setValues({ ...values, [a.id]: e.target.value })} />
+              </label>
+            ))}
+            <div className="flex gap-2"><Button type="submit">Enregistrer</Button><Button type="button" variant="ghost" onClick={() => setEditing(false)}>Annuler</Button></div>
+          </form>
+        ) : (
+          <button type="button" onClick={startEdit} className="my-1 block text-left text-5xl font-semibold tracking-tight" title="Corriger avec le montant de ta banque">{formatMoney(d.x.liquid)}</button>
+        )}
+        {!editing && (stale
+          ? <button type="button" onClick={startEdit} className="text-sm text-amber-700 underline dark:text-amber-400">Vérifie ce montant avec ta banque</button>
+          : <p className="text-xs text-muted-foreground">Confirmé le {new Date(last!).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: 'UTC' })} · touche le montant pour le corriger</p>)}
+      </div>
+      {/* une seule réponse à « combien je peux dépenser » : libre = solde + à recevoir − charges − ponctuels − budget restant */}
+      <div className={cn('rounded-3xl p-7 text-white', libre >= 0 ? 'bg-[#0071e3]' : 'bg-[#d70015]')}>{/* mêmes teintes en clair et en sombre : texte blanc lisible (AA) */}
+        <p className="text-[15px]">{libre >= 0 ? 'Libre à dépenser, hors budget prévu' : 'Il te manque'}</p>
+        <p className="my-1 text-5xl font-semibold tracking-tight">{formatMoney(Math.abs(libre))}</p>
+        <p className="text-sm">{libre >= 0 ? <>soit {euros(d.perDay)} par jour{d.x.daysLeft > 7 ? <> ({euros(d.perDay * 7)} par semaine)</> : null} jusqu’à ta paie du {fmtDay(d.payday)}</> : <>pour payer tes charges et ton budget d’ici ta paie du {fmtDay(d.payday)}</>}</p>
+        {d.x.incoming > 0 && <p className="mt-3 text-xs">Pas compté : {formatMoney(d.x.incoming)} attendus{d.nextIncome ? ` (${d.nextIncome.recurring.name} le ${fmtDay(d.nextIncome.date)})` : ''}. Coche-les quand ils arrivent.</p>}
+        {d.x.confidence !== 'none' && d.x.dailyEveryday > 0 && (
+          <p className="mt-3 text-xs" data-testid="forecast-end">Si tu dépenses comme d’habitude ({euros(d.x.dailyEveryday)}/jour) : ≈ {formatMoney(d.x.forecastEnd)} avant ta paie</p>
+        )}
+      </div>
     </section>
+  )
+}
+
+/**
+ * Ton argent jusqu'à la paie, en une barre : ce qui est déjà promis (charges, ponctuels), ce que tu as prévu de dépenser
+ * (budget restant) et ce qui reste libre. Barre segmentée haute : une seule somme, au plus 4 parts, légende à côté.
+ */
+function MoneyBar() {
+  const { db, version } = useDb()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const x = useMemo(() => b.resteAVivreFor(db, today()), [db, version])
+  const total = x.liquid, libre = x.liquid - x.dated - x.oneOff - x.envelopes
+  const parts = [
+    { key: 'charges', label: 'Charges à payer', value: x.dated + x.oneOff, color: 'var(--viz-2)' },
+    { key: 'budget', label: 'Budget prévu restant', value: x.envelopes, color: 'var(--viz-3)' },
+    { key: 'libre', label: 'Libre', value: Math.max(0, libre), color: 'var(--viz-1)' },
+  ].filter((p) => p.value > 0)
+  if (total <= 0 && !parts.length) return null
+  const scale = Math.max(total, parts.reduce((s, p) => s + p.value, 0))
+  return (
+    <Section title="Ton argent jusqu’à la paie">
+      <p className="mb-3 text-sm text-muted-foreground">Les {formatMoney(x.liquid)} de ton compte, répartis ainsi :</p>
+      <div className="flex h-7 w-full gap-0.5 overflow-hidden rounded-md" role="img" aria-label={parts.map((p) => `${p.label} ${formatMoney(p.value)}`).join(', ')}>
+        {parts.map((p) => (
+          <div key={p.key} className="rounded-[4px]" style={{ width: `${(p.value / scale) * 100}%`, background: p.color }} title={`${p.label} : ${formatMoney(p.value)}`} />
+        ))}
+        {libre < 0 && <div className="flex flex-1 items-center justify-center rounded-[4px] bg-destructive/15 text-xs font-medium text-destructive">manque {formatMoney(-libre)}</div>}
+      </div>
+      <ul className="mt-3 grid grid-cols-1 gap-1 text-sm sm:grid-cols-3">
+        {parts.map((p) => (
+          <li key={p.key} className="flex items-center gap-2"><span className="size-2.5 rounded-sm" style={{ background: p.color }} aria-hidden />{p.label}<span className="ml-auto tabular-nums sm:ml-1">{formatMoney(p.value)}</span></li>
+        ))}
+      </ul>
+    </Section>
+  )
+}
+
+/** Courbe du solde sur la période : réel jusqu'à aujourd'hui, prévision ensuite (même calcul que partout). */
+function BalanceCurve() {
+  const { db, version } = useDb()
+  const data = useMemo(() => {
+    const cur = b.currentPeriod(db, today()), { start, end } = b.periodBounds(db, cur)
+    const past = an.balanceHistory(db, start, today(), true)
+    const f = an.forecast(db, today(), 1)
+    const fut = f.days.filter((x) => x.date > today() && x.date <= end)
+    return [
+      ...past.map((p, i) => ({ date: p.date, reel: p.balance / 100, prevision: i === past.length - 1 ? p.balance / 100 : undefined as number | undefined })),
+      ...fut.map((p) => ({ date: p.date, reel: undefined as number | undefined, prevision: p.balance / 100, ev: p.events.map((e) => e.label).join(', ') })),
+    ]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, version])
+  if (data.length < 2) return null
+  const short = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  const min = Math.min(...data.map((x) => x.prevision ?? x.reel ?? 0))
+  return (
+    <Section title="Ton solde jusqu’à la paie">
+      <div className="mb-2 flex gap-4"><LegendItem color="var(--viz-1)" label="Réel" line /><LegendItem color="var(--viz-1)" label="Prévu" line dashed /></div>
+      <div className="h-44">
+        <ResponsiveContainer>
+          <AreaChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <defs><linearGradient id="soldeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--viz-1)" stopOpacity={0.18} /><stop offset="100%" stopColor="var(--viz-1)" stopOpacity={0} /></linearGradient></defs>
+            <CartesianGrid {...gridProps} />
+            <XAxis dataKey="date" tickFormatter={short} {...axisProps} minTickGap={28} />
+            <YAxis tickFormatter={axisEuro} width={44} {...axisProps} />
+            {min < 0 && <ReferenceLine y={0} stroke="var(--viz-critical)" />}
+            <Tooltip content={<ChartTooltip labelFormat={short} />} />
+            <Area dataKey="reel" name="Réel" stroke="var(--viz-1)" strokeWidth={2} fill="url(#soldeFill)" type="stepAfter" connectNulls={false} />
+            <Area dataKey="prevision" name="Prévu" stroke="var(--viz-1)" strokeWidth={2} strokeDasharray="5 4" fill="none" type="stepAfter" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </Section>
+  )
+}
+
+/** Où part l'argent cette période (barres classées, une teinte) et le conseil le plus utile du moment. */
+function WhereAndAdvice() {
+  const { db, version } = useDb()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const r = useMemo(() => periodReport(db, b.currentPeriod(db, today()), today()), [db, version])
+  const cats = r.profile.byCategory.slice(0, 5), max = cats[0]?.total ?? 1
+  const tips = r.advice.filter((a) => a.tone !== 'bravo').slice(0, 2)
+  const top = tips.length ? tips : r.advice.slice(0, 1)
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Section title="Où part ton argent">
+        {!cats.length ? <p className="text-sm text-muted-foreground">Rien de dépensé sur cette période pour l’instant.</p> : (
+          <ul className="grid gap-2.5 text-sm">
+            {cats.map((c) => (
+              <li key={c.id ?? 'none'}>
+                <div className="flex justify-between gap-2"><span className="truncate">{r.catName(c.id)} <span className="text-xs text-muted-foreground">{c.count}×</span></span><span className="tabular-nums">{formatMoney(c.total)}</span></div>
+                <div className="mt-1 h-1.5 rounded-r-full" style={{ width: `${(c.total / max) * 100}%`, background: 'var(--viz-1)', minWidth: 3 }} aria-hidden />
+              </li>
+            ))}
+          </ul>
+        )}
+        <a href="#/bilan" className="mt-4 inline-flex items-center gap-1 text-sm text-primary">Voir le bilan complet <ChevronRight className="size-4" /></a>
+      </Section>
+      <Section title="Le conseil du moment">
+        {!top.length ? <p className="text-sm text-muted-foreground">Rien à signaler : continue comme ça.</p> : (
+          <ul className="grid gap-4">
+            {top.map((a) => (
+              <li key={a.id}>
+                <p className={cn('font-medium', a.tone === 'attention' && 'text-destructive', a.tone === 'bravo' && 'text-emerald-700 dark:text-emerald-400')}>{a.title}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">{a.action ?? a.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <a href="#/bilan" className="mt-4 inline-flex items-center gap-1 text-sm text-primary">Tous les conseils <ChevronRight className="size-4" /></a>
+      </Section>
+    </div>
   )
 }
 
@@ -219,15 +340,18 @@ export function HomePage() {
   const accounts = useAccounts()
   if (!accounts.length) return <Empty>Bienvenue ! Commence par <a className="underline" href="#/comptes">ajouter ton compte</a> avec son solde actuel.</Empty>
   return (
-    <div className="mx-auto grid max-w-3xl gap-5 pb-[calc(env(safe-area-inset-bottom)+5rem)] lg:pb-0">
+    <div className="mx-auto grid max-w-4xl gap-5 pb-[calc(env(safe-area-inset-bottom)+5rem)] lg:pb-0">
       <h1 className="sr-only">Aperçu</h1>
       <Balance />
       <Alerts />
-      <Forecast />
+      <MoneyBar />
       <div className="grid gap-4 md:grid-cols-2">
         <Due />
         <Envelopes />
       </div>
+      <BalanceCurve />
+      <WhereAndAdvice />
+      <Forecast />
       <NextStep />
     </div>
   )

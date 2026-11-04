@@ -12,15 +12,19 @@ const CSP = [
   "img-src 'self' data: blob:", "font-src 'self' data:", "connect-src 'self' https://api.frankfurter.dev http://localhost:11434 http://127.0.0.1:11434 http://*:11434",
   "object-src 'none'", "base-uri 'self'", "form-action 'none'",
 ].join('; ')
-const csp = (): Plugin => ({ name: 'csp', apply: 'build', transformIndexHtml: (html) => html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CSP}" />\n    <meta name="referrer" content="no-referrer" />`) })
+// Version Odoo (npm run build:odoo) : un seul fichier HTML, tout en ligne, chargé dans un cadre sur le site Odoo.
+const CSP_ODOO = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline' blob: data:").replace("worker-src 'self' blob:", "worker-src 'self' blob: data:").replace("connect-src 'self'", "connect-src 'self' data: blob:")
+const csp = (odoo: boolean): Plugin => ({ name: 'csp', apply: 'build', transformIndexHtml: (html) => html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${odoo ? CSP_ODOO : CSP}" />\n    <meta name="referrer" content="no-referrer" />`) })
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './', // fonctionne aussi sous un sous-dossier (GitHub Pages)
+  ...(mode === 'odoo' ? { build: { outDir: 'dist-odoo', assetsInlineLimit: () => true, cssCodeSplit: false, rollupOptions: { output: { inlineDynamicImports: true } } } } : {}),
   plugins: [
     react(),
     tailwindcss(),
-    csp(),
+    csp(mode === 'odoo'),
     VitePWA({
+      disable: mode === 'odoo', // pas de service worker dans un cadre Odoo
       registerType: 'prompt', // jamais de rechargement surprise : l'utilisateur choisit quand mettre à jour
       includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       manifest: {
@@ -41,4 +45,4 @@ export default defineConfig({
   ],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
-})
+}))

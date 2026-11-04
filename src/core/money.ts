@@ -21,6 +21,33 @@ export function parseAmount(input: string): number | null {
   return neg ? -cents : cents
 }
 
+/** Calculatrice de saisie : « 75/2 », « 12,50+3 », « 3x4,20 ». Sans opération, même lecture que parseAmount. */
+export function evalAmount(input: string): number | null {
+  const s = input.replace(/[\s  €]/g, '').replace(/[x×]/gi, '*').replace(/÷/g, '/')
+  if (!/\d[+\-*/][+\-]?\d/.test(s)) return parseAmount(input) // « 12- » ou « (12) » restent des formats de relevé
+  const t = s.match(/\d[\d.,]*|[+\-*/]/g)
+  if (!t || t.join('') !== s) return null
+  let i = 0
+  const num = (): number | null => {
+    let sign = 1
+    while (t[i] === '+' || t[i] === '-') if (t[i++] === '-') sign = -sign
+    const c = t[i] && /\d/.test(t[i]!) ? parseAmount(t[i++]!) : null
+    return c === null ? null : (sign * c) / 100
+  }
+  const term = (): number | null => {
+    let v = num()
+    while (v !== null && (t[i] === '*' || t[i] === '/')) {
+      const op = t[i++], r = num()
+      if (r === null || (op === '/' && r === 0)) return null
+      v = op === '*' ? v * r : v / r
+    }
+    return v
+  }
+  let v = term()
+  while (v !== null && i < t.length) { const op = t[i++], r = term(); v = r === null ? null : op === '+' ? v + r : v - r }
+  return v === null || !Number.isFinite(v) ? null : Math.round(v * 100)
+}
+
 /** Mode confidentialité : les montants affichés sont masqués (les exports, eux, utilisent formatRaw). */
 export const privacy = { hidden: false }
 

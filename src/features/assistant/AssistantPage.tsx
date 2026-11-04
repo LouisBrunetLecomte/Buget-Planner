@@ -35,7 +35,7 @@ export function AssistantPage() {
   const s = assistantSettings(db)
   const [msgs, setMsgs] = useState<ChatMessage[]>([]), [q, setQ] = useState(''), [busy, setBusy] = useState(false), [err, setErr] = useState<string | null>(null)
   const abort = useRef<AbortController | null>(null)
-  if (!s.enabled) return <><PageHeader title="Assistant" /><Empty>L’assistant est désactivé. Il fonctionne avec un modèle d’IA installé sur ton ordinateur (Ollama, gratuit) : rien ne part sur Internet. Active-le dans <a className="underline" href="#/reglages">Réglages</a>.</Empty></>
+  if (!s.enabled) return <><PageHeader title="Assistant" /><Empty>L’assistant est désactivé. Il fonctionne avec un modèle d’IA installé sur ton ordinateur (Ollama, gratuit) : rien ne part sur Internet. Active-le dans <a className="underline" href="#/reglages">Paramètres</a>.</Empty></>
 
   async function ask() {
     const question = q.trim()

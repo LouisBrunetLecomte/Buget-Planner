@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { parseAmount, formatMoney } from '@/core/money'
+import { evalAmount, formatMoney } from '@/core/money'
 import { validateSplits } from '@/core/splits'
 import * as repo from '@/db/repo'
 import { mutate, useDb } from '@/app/store'
@@ -42,8 +42,8 @@ export function TxDialog({ tx, onClose }: { tx: repo.Tx; onClose: () => void }) 
   }
   const [parts, setParts] = useState<Part[]>(() => repo.getSplits(db, tx.id).map((s) => ({ categoryId: s.categoryId, amount: fmt(s.amount) })))
 
-  const cents = parseAmount(amount)
-  const parsedParts = parts.map((p) => ({ categoryId: p.categoryId, amount: parseAmount(p.amount) ?? 0 }))
+  const cents = evalAmount(amount)
+  const parsedParts = parts.map((p) => ({ categoryId: p.categoryId, amount: evalAmount(p.amount) ?? 0 }))
   const splitError = parts.length && cents !== null ? validateSplits(cents, parsedParts) : null
   const remaining = cents !== null ? cents - parsedParts.reduce((s, p) => s + p.amount, 0) : 0
 

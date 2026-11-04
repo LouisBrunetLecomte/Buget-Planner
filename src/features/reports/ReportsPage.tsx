@@ -95,7 +95,7 @@ export function ReportsPage() {
           <CardContent className="grid gap-2 text-sm">
             <Button size="sm" variant="outline" className="justify-start" onClick={() => run(() => download(x.transactionsCsv(db), `operations-${today()}.csv`, 'text/csv'))}><FileDown />Toutes les opérations (CSV, Excel)</Button>
             <Button size="sm" variant="outline" className="justify-start" onClick={() => run(() => { if (confirm('Ce fichier JSON n’est PAS chiffré : il contient toutes tes données en clair. Continuer ?')) download(x.exportAllJson(db), `budget-complet-${today()}.json`, 'application/json') })}><FileDown />Tout, en JSON (non chiffré)</Button>
-            <p className="text-xs text-muted-foreground">La sauvegarde chiffrée, restaurable dans l’app, est dans <a className="underline" href="#/reglages">Réglages</a>.</p>
+            <p className="text-xs text-muted-foreground">La sauvegarde chiffrée, restaurable dans l’app, est dans <a className="underline" href="#/reglages">Paramètres</a>.</p>
           </CardContent>
         </Card>
         <Fiscal />

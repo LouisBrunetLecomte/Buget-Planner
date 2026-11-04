@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, type ComponentType } from 'react'
-import { ChevronDown, Eye, EyeOff, Lock, Undo2 } from 'lucide-react'
+import { ChevronDown, Eye, EyeOff, Lock, Settings, Undo2 } from 'lucide-react'
 import '@/app/theme'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -20,6 +20,7 @@ const named = <K extends string>(load: () => Promise<Record<K, ComponentType>>, 
 const PAGES: Record<string, [string, ComponentType, 'main' | 'more']> = {
   accueil: ['Aperçu', HomePage, 'main'],
   budget: ['Budget', BudgetPage, 'main'],
+  bilan: ['Bilan', named(() => import('@/features/bilan/BilanPage'), 'BilanPage'), 'main'],
   operations: ['Journal', TransactionsPage, 'main'],
   comptes: ['Comptes', named(() => import('@/features/accounts/AccountsPage'), 'AccountsPage'), 'main'],
   recurrences: ['Salaire et charges fixes', named(() => import('@/features/recurring/RecurringPage'), 'RecurringPage'), 'more'],
@@ -30,7 +31,7 @@ const PAGES: Record<string, [string, ComponentType, 'main' | 'more']> = {
   categories: ['Catégories et règles', named(() => import('@/features/categories/CategoriesPage'), 'CategoriesPage'), 'more'],
   rapports: ['Rapports et exports', named(() => import('@/features/reports/ReportsPage'), 'ReportsPage'), 'more'],
   assistant: ['Assistant', named(() => import('@/features/assistant/AssistantPage'), 'AssistantPage'), 'more'],
-  reglages: ['Réglages', named(() => import('@/features/settings/SettingsPage'), 'SettingsPage'), 'more'],
+  reglages: ['Paramètres', named(() => import('@/features/settings/SettingsPage'), 'SettingsPage'), 'more'],
 }
 
 const AUTO_LOCK_MS = 15 * 60_000
@@ -82,6 +83,7 @@ function Shell() {
             {s.status === 'open' && s.saveError && <span role="alert" className="text-xs text-destructive">Échec de sauvegarde : {s.saveError}</span>}
             <Button variant="ghost" size="icon-sm" aria-label={last ? `Annuler : ${last.label}` : 'Rien à annuler'} title={last ? `Annuler : ${last.label} (⌘Z)` : undefined} disabled={!last} onClick={doUndo}><Undo2 /></Button>
             <Button variant="ghost" size="icon-sm" aria-label={hidden ? 'Afficher les montants' : 'Masquer les montants'} aria-pressed={hidden} onClick={togglePrivacy}>{hidden ? <EyeOff /> : <Eye />}</Button>
+            <Button variant="ghost" size="icon-sm" aria-label="Paramètres" title="Paramètres" aria-current={route === 'reglages' ? 'page' : undefined} onClick={() => { location.hash = '#/reglages' }}><Settings /></Button>
             <Button variant="ghost" size="icon-sm" aria-label="Verrouiller" onClick={lock}><Lock /></Button>
           </div>
         </div>
@@ -90,7 +92,7 @@ function Shell() {
         <Suspense fallback={<p className="text-sm text-muted-foreground">Chargement…</p>}><Page key={String(hidden)} /></Suspense>
         <Tutorial />
       </main>
-      <nav aria-label="Navigation mobile" className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-border/60 bg-background/80 backdrop-blur-xl lg:hidden">
+      <nav aria-label="Navigation mobile" className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-6 border-t border-border/60 bg-background/80 backdrop-blur-xl lg:hidden">
         {entries.filter(([, [, , g]]) => g === 'main').map(([k, [label]]) => (
           <a key={k} href={`#/${k}`} aria-current={route === k ? 'page' : undefined} className={cn('py-3 text-center text-xs', route === k ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{label}</a>
         ))}

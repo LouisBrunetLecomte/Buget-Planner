@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { today } from '@/core/dates'
 import * as repo from '@/db/repo'
-import { changePassword, exportBackup, getHistory, mutate, undoTo, verifyPassword, wipeAll, MIN_PASSWORD } from '@/app/store'
+import { changePassword, exportBackup, getHistory, mutate, undoTo, verifyPassword, wipeAll, resetData, MIN_PASSWORD } from '@/app/store'
 import { hasTouchIdBridge, touchIdDisable, touchIdEnroll, touchIdStatus } from '@/app/macAuth'
 import { Fingerprint } from 'lucide-react'
 import { useEffect } from 'react'
@@ -182,7 +182,20 @@ function AlertsCard() {
                   }} />Recevoir une notification pour chaque nouvelle alerte
                 </label>
               )}
-            <p className="mt-1 text-xs text-muted-foreground">Le titre et le montant de l’alerte s’affichent dans le centre de notifications. Pour l’instant, elles partent seulement quand l’app est ouverte.</p>
+            {notifState !== 'unsupported' && notifState !== 'denied' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2">
+                  <Checkbox checked={s.reminderHour !== null && notifState === 'granted'} onCheckedChange={async (v) => {
+                    if (v === true && Notification.permission !== 'granted' && (await Notification.requestPermission()) !== 'granted') return toast.error('Notifications refusées')
+                    save({ reminderHour: v === true ? 20 : null })
+                  }} />Me rappeler chaque jour de noter mes dépenses, à
+                </label>
+                <select aria-label="Heure du rappel" className="rounded-md border bg-background px-1 py-0.5" disabled={s.reminderHour === null} value={s.reminderHour ?? 20} onChange={(e) => save({ reminderHour: Number(e.target.value) })}>
+                  {Array.from({ length: 17 }, (_, i) => i + 7).map((h) => <option key={h} value={h}>{h} h</option>)}
+                </select>
+              </div>
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">Le titre et le montant de l’alerte s’affichent dans le centre de notifications. Le rappel ne part que si rien n’a été noté ce jour-là. Pour l’instant, notifications et rappel partent seulement quand l’app est ouverte.</p>
           </div>
         </div>
       </CardContent>
@@ -205,7 +218,7 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Réglages" />
+      <PageHeader title="Paramètres" />
       <div className="grid gap-4 lg:grid-cols-2">
         <AlertsCard />
         <ModulesCard />
@@ -243,11 +256,22 @@ export function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-destructive/40">
-          <CardHeader><CardTitle>Supprimer toutes mes données</CardTitle><CardDescription>Efface définitivement la base de cet appareil. Tape SUPPRIMER pour confirmer.</CardDescription></CardHeader>
-          <CardContent className="flex gap-2">
-            <Input ref={wipeRef} aria-label="Confirmation de suppression" placeholder="SUPPRIMER" />
-            <Button variant="destructive" onClick={() => { if (wipeRef.current?.value === 'SUPPRIMER') void touchIdDisable().then(wipeAll); else toast.error('Tape SUPPRIMER pour confirmer') }}>Tout effacer</Button>
+        <Card id="reinitialiser" className="border-destructive/40 lg:col-span-2">
+          <CardHeader><CardTitle>Réinitialiser l’app</CardTitle>
+            <CardDescription>Repartir de zéro : comptes, opérations, budget, charges fixes, objectifs, tout est effacé. Pense à télécharger une sauvegarde avant si tu veux pouvoir revenir en arrière plus tard. Tape SUPPRIMER pour confirmer.</CardDescription></CardHeader>
+          <CardContent className="grid gap-3">
+            <Input ref={wipeRef} aria-label="Confirmation de suppression" placeholder="SUPPRIMER" className="md:w-64" />
+            <div className="flex flex-wrap gap-2">
+              <Button variant="destructive" onClick={() => {
+                if (wipeRef.current?.value !== 'SUPPRIMER') return toast.error('Tape SUPPRIMER pour confirmer')
+                void resetData().then(() => { wipeRef.current!.value = ''; location.hash = '#/accueil'; toast.success('App remise à zéro. ⌘Z pour annuler tant qu’elle reste ouverte.') })
+              }}>Remettre à zéro (garder mon mot de passe)</Button>
+              <Button variant="outline" className="border-destructive/60 text-destructive" onClick={() => {
+                if (wipeRef.current?.value !== 'SUPPRIMER') return toast.error('Tape SUPPRIMER pour confirmer')
+                if (confirm('Tout effacer, mot de passe compris ? Rien ne pourra être récupéré sans sauvegarde.')) void touchIdDisable().then(wipeAll)
+              }}>Tout effacer, mot de passe compris</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">« Remettre à zéro » garde ton mot de passe et Touch ID, et relance le tutoriel. « Tout effacer » revient à l’écran de bienvenue, comme une app neuve.</p>
           </CardContent>
         </Card>
       </div>

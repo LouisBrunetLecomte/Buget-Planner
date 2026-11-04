@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseAmount, formatMoney } from './money'
+import { parseAmount, formatMoney, evalAmount } from './money'
 import { parseDate, guessDateFormat } from './dates'
 import { normalizeLabel } from './labels'
 import { readCsvGrid, suggestMapping, parseCsv, parseOfx, parseQif, decodeFile, detectKind } from './parsers'
@@ -15,6 +15,11 @@ describe('montants', () => {
     ['1,234.56', 123456], ['-12.5', -1250], ['(12,00)', -1200], ['12,00-', -1200], ['+3', 300], ['0,005', 1], ['1,234', 123400],
   ])('%s → %i', (s, c) => expect(parseAmount(s)).toBe(c))
   it('rejette les textes', () => { expect(parseAmount('abc')).toBeNull(); expect(parseAmount('')).toBeNull() })
+  it.each([
+    ['75/2', 3750], ['12,50+3', 1550], ['3x4,20', 1260], ['+50+20', 7000], ['10-2,5*2', 500], ['-5+2', -300],
+    ['12,50', 1250], ['12-', -1200], ['(12)', -1200], ['1/3', 33], ['5*-2', -1000],
+  ])('calculatrice %s → %i', (s, c) => expect(evalAmount(s)).toBe(c))
+  it('calculatrice : expressions invalides', () => { for (const s of ['5/0', '5+', '5+abc', '5**2']) expect(evalAmount(s)).toBeNull() })
   it('formate en français', () => expect(formatMoney(-123456)).toMatch(/-1\s234,56\s€/))
 })
 

@@ -1,0 +1,27 @@
+# À chaque push sur main : fabrique la version Odoo (un seul fichier compressé) et la publie sur la branche « odoo ».
+# La page mybudget.odoo.com la télécharge à chaque visite (via l'identifiant du dépôt, sans nom d'utilisateur).
+name: Version Odoo
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:odoo
+      - name: Publier sur la branche odoo
+        run: |
+          cd dist-odoo
+          git init -q -b odoo
+          git add buget.html.gz
+          git -c user.name="Buget" -c user.email="buget@users.noreply.github.com" commit -qm "Version Odoo ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" odoo

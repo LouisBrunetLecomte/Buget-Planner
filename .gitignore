@@ -26,3 +26,4 @@ dist-ssr
 public/ocr/
 test-results/
 playwright-report/
+dist-odoo

@@ -114,6 +114,17 @@ export async function undoTo(index: number) {
 }
 export const undo = () => undoTo(history.length - 1)
 
+/** Remise à zéro en gardant le mot de passe : base neuve (catégories par défaut), tutoriel relancé. Annulable (⌘Z) tant que l'app reste ouverte. */
+export async function resetData() {
+  if (state.status !== 'open' || !sqlite) return
+  const snap = exportDb(sqlite), o = openDb(await getSQL())
+  seedDefaults(o.db)
+  sqlite.close(); sqlite = o.sqlite
+  history = [...history, { label: 'Remise à zéro', at: Date.now(), bytes: snap }]
+  set({ ...state, db: o.db })
+  touch()
+}
+
 /** Vérifie un mot de passe contre le coffre, sans rien ouvrir. */
 export async function verifyPassword(password: string): Promise<boolean> {
   const v = await loadVault()

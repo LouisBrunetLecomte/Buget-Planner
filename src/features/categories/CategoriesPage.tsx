@@ -88,7 +88,7 @@ function Rules() {
       </form>
       <div className="mb-3 flex items-center justify-between gap-2 text-sm text-muted-foreground">
         <span>Les règles s’appliquent à l’import et à la saisie. Une correction manuelle crée une règle « apprise ».</span>
-        <Button size="sm" variant="outline" onClick={() => { const n = mutate((d) => repo.applyRulesToUncategorized(d)); toast.success(`${n} opération(s) catégorisée(s)`) }}>Appliquer aux non catégorisées</Button>
+        <Button size="sm" variant="outline" onClick={() => { const n = mutate((d) => repo.applyRulesToUncategorized(d)); toast.success(`${n} opération(s) catégorisée(s)`) }}>Classer automatiquement les non catégorisées</Button>
       </div>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">

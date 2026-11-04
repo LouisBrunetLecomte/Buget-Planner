@@ -8,6 +8,7 @@
 - ~~**Phase 5** : synchro bancaire~~ (abandonnée à ta demande, voir D3).
 - [x] **Phase 6** : PWA, pièces jointes + OCR, relevés PDF, rapports PDF, exports, freelance, fiscal, assistant Ollama.
 - [x] **Phase 7** : annulation et historique, changement de mot de passe, mode confidentialité, CSP, accueil guidé, tests Playwright et accessibilité, audit des dépendances, performance.
+- [x] **Phase 8** (face à The Budgeting App) : calculatrice dans les montants, calendrier des opérations avec solde jour par jour, défis et séries, résumé de période tenus / à resserrer, rappel quotidien, rythme par semaine sur l'accueil.
 
 ## Limites connues
 - **Notifications** : seulement quand l'app est ouverte (pas de serveur de push).
@@ -20,6 +21,8 @@
 - **Langue** : textes en français uniquement. L'i18n se fera en extrayant les textes le jour où une 2e langue sera demandée.
 
 ## Pistes
+- Budgets à la semaine ou à la quinzaine (aujourd'hui : mois ou de paie à paie).
+- Icônes de catégories.
 - Fusion de deux sauvegardes (usage à deux).
 - Règles d'alertes libres (« si… alors… »).
 - Contrôle d'accessibilité automatisé en mode sombre.

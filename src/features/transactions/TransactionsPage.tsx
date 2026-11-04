@@ -3,14 +3,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import { parseAmount, formatMoney } from '@/core/money'
+import { evalAmount, formatMoney } from '@/core/money'
 import { normalizeLabel } from '@/core/labels'
-import { categorize } from '@/core/rules'
 import { today } from '@/core/dates'
 import * as repo from '@/db/repo'
 import { mutate, useDb } from '@/app/store'
 import { AccountSelect, attempt, CategorySelect, Empty, Money, MonthPicker, PageHeader, useAccounts, useCategories } from '@/app/ui'
 import { TxDialog } from './TxDialog'
+import { CalendarView } from './CalendarView'
 import { isFreelance } from '@/db/extrasRepo'
 
 const LAST_ACCOUNT = 'budget:lastAccount' // non sensible : simple identifiant aléatoire
@@ -25,7 +25,9 @@ function QuickAdd() {
   const acc = accounts.find((a) => a.id === accountId) ?? accounts[0]
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rules = useMemo(() => repo.listRules(db), [db, version])
-  const suggested = acc && label ? categorize(rules, normalizeLabel(label), acc.id) : null
+  const { all: cats } = useCategories()
+  // sans signe = dépense ; « + » devant = revenu (comme à l'enregistrement)
+  const suggested = acc && label ? repo.autoCategory(rules, cats, normalizeLabel(label), acc.id, amount.trim().startsWith('+') ? 1 : -1) : null
 
   // "n" n'importe où : nouvelle opération
   useEffect(() => {
@@ -40,7 +42,7 @@ function QuickAdd() {
   if (!acc) return null
   function submit() {
     // saisie sans signe = dépense ; "+" devant = revenu
-    const raw = parseAmount(amount)
+    const raw = evalAmount(amount)
     if (raw === null || raw === 0) return toast.error('Montant illisible')
     const cents = amount.trim().startsWith('+') || amount.trim().startsWith('-') ? raw : -raw
     const ok = attempt(() => mutate((d) => repo.addTransaction(d, { accountId: acc!.id, date, amount: cents, label: label.trim() || '(saisie)', categoryId: touched ? categoryId : (suggested ?? null) }), { label: `Ajout : ${label.trim() || 'saisie'}` }))
@@ -54,7 +56,7 @@ function QuickAdd() {
   return (
     <form aria-label="Saisie rapide" className="mb-4 grid grid-cols-2 gap-2 rounded-lg border bg-card p-3 md:grid-cols-[7rem_1fr_12rem_10rem_9rem_auto]"
       onSubmit={(e) => { e.preventDefault(); submit() }}>
-      <Input ref={amountRef} aria-label="Montant (préfixe + pour un revenu)" placeholder="12,50 ou +100" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+      <Input ref={amountRef} aria-label="Montant (préfixe + pour un revenu, calculs acceptés : 75/2)" placeholder="12,50 ou 75/2" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
       <Input aria-label="Libellé" placeholder="Libellé" value={label} onChange={(e) => setLabel(e.target.value)} />
       <CategorySelect value={touched ? categoryId : suggested} onChange={(v) => { setCategoryId(v); setTouched(true) }} placeholder="Catégorie" />
       <AccountSelect value={acc.id} onChange={(v) => v && setAccountId(v)} />
@@ -102,6 +104,7 @@ export function TransactionsPage() {
   const [categoryId, setCategoryId] = useState<string | null>(null), [month, setMonth] = useState('')
   const [onlyUncat, setOnlyUncat] = useState(false), [scope, setScope] = useState<'all' | 'pro' | 'perso'>('all'), [showFilters, setShowFilters] = useState(false)
   const freelance = isFreelance(db)
+  const [view, setView] = useState<'liste' | 'calendrier'>('liste')
   const [selected, setSelected] = useState<Set<string>>(new Set()), [editing, setEditing] = useState<repo.Tx | null>(null)
 
   const txs = useMemo(() => repo.listTransactions(db, {
@@ -114,6 +117,8 @@ export function TransactionsPage() {
   }), [db, version, q, accountId, categoryId, month, onlyUncat, scope])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const splitIds = useMemo(() => repo.listSplitTxIds(db), [db, version])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const uncategorized = useMemo(() => repo.listTransactions(db, { categoryId: 'none', limit: 100_000 }).filter((t) => !splitIds.has(t.id)).length, [db, version, splitIds])
   const visibleSel = txs.filter((t) => selected.has(t.id)).map((t) => t.id)
   const running = useMemo(() => {
     const acc = accountId ? accounts.find((a) => a.id === accountId) : accounts.filter((a) => !a.archived).length === 1 ? accounts.find((a) => !a.archived) : undefined
@@ -138,6 +143,20 @@ export function TransactionsPage() {
       <PageHeader title="Journal" subtitle={running ? 'Toutes tes opérations, comme sur un relevé : sorties, entrées et solde.' : 'Toutes tes opérations, comme sur un relevé. Choisis un compte dans Filtres pour voir son solde ligne à ligne.'} />
       <QuickAdd />
       <TransferSuggestions />
+      {uncategorized > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card p-3 text-sm">
+          <span>{uncategorized} opération{uncategorized > 1 ? 's' : ''} sans catégorie.</span>
+          <Button size="sm" onClick={() => {
+            const n = mutate((d) => repo.applyRulesToUncategorized(d), { label: 'Classement automatique' })
+            if (n) toast.success(`${n} opération${n > 1 ? 's' : ''} classée${n > 1 ? 's' : ''} d’après l’établissement. ⌘Z pour annuler.`)
+            else toast.info('Aucun établissement reconnu. Classe-les à la main : Buget retiendra pour les suivantes.')
+          }}>Classer automatiquement</Button>
+        </div>
+      )}
+      <div className="mb-3 flex gap-1" role="group" aria-label="Affichage">
+        {(['liste', 'calendrier'] as const).map((k) => <Button key={k} size="sm" variant={view === k ? 'default' : 'outline'} aria-pressed={view === k} onClick={() => setView(k)}>{k === 'liste' ? 'Liste' : 'Calendrier'}</Button>)}
+      </div>
+      {view === 'calendrier' ? <CalendarView onEdit={setEditing} /> : <>
       {/* recherche toujours visible ; les autres filtres seulement sur demande */}
       <div className="mb-3 flex gap-2">
         <Input type="search" aria-label="Rechercher" placeholder="Rechercher (libellé, note, montant)…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -208,6 +227,7 @@ export function TransactionsPage() {
           </table>
         </div>
       )}
+      </>}
       {editing && <TxDialog tx={editing} onClose={() => setEditing(null)} />}
     </>
   )

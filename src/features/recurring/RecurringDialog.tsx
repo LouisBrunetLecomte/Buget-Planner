@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { parseAmount } from '@/core/money'
+import { evalAmount } from '@/core/money'
 import { daysInMonth, monthOf, today } from '@/core/dates'
 import type { Freq } from '@/core/recurring'
 import { RECURRING_KINDS } from '@/db/schema'
@@ -42,7 +42,7 @@ export function RecurringDialog({ draft, onClose }: { draft: RecurringDraft; onC
   const clamp = (m: string, d: number) => `${m}-${String(Math.min(d, daysInMonth(m))).padStart(2, '0')}`
   const firstDate = monthly ? clamp(startMonth, day) : startDate
   const signed = (c: number) => (kind === 'revenu' ? Math.abs(c) : -Math.abs(c))
-  const cents = parseAmount(amount)
+  const cents = evalAmount(amount)
   const timingChanged = !!draft.id && monthly && draft.freq === 'month' && cents !== null &&
     (signed(cents) !== draft.amount || day !== (draft.dayOfMonth ?? Number(draft.startDate!.slice(8, 10))))
 

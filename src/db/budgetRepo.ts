@@ -8,10 +8,9 @@ import { periodEnd, periodLabel, periodName, periodOf, periodStart } from '@/cor
 import { rateOn } from '@/core/fx'
 import { detectRecurring, matchOccurrences, monthlyEquivalent, occurrences, priceIncrease, type MatchTx, type Suggestion } from '@/core/recurring'
 import { applyScope, computeBudget, resteAVivre, type Actuals, type PlannedItem, type RecurringPlan, type Scope } from '@/core/budget'
-import { buildForecast, everydayRate, type Forecast } from '@/core/forecast'
+import { buildForecast, type Forecast } from '@/core/forecast'
 
 export type Recurring = typeof recurring.$inferSelect
-const LIQUID: string[] = ['courant', 'carte', 'especes']
 const now = sql`(datetime('now'))`
 
 // ---------- récurrences ----------
@@ -67,19 +66,15 @@ export function recurringPlan(db: Db, from: string, to: string): RecurringPlan {
  * Dépense courante observée (R) : dépenses des comptes courants des 90 derniers jours, hors virements, coches,
  * opérations rapprochées d'une échéance et catégories qui ont une ligne de budget sur leur période.
  */
+/**
+ * Plus de « dépense courante » estimée : une moyenne de tout ce qui sort du compte mélange charges et achats
+ * (carte ou virement) et compterait deux fois les charges. Les prévisions ne retiennent que ce qui est identifié.
+ * confidence dit seulement si un budget existe pour les dépenses du quotidien (sinon l'écran le signale).
+ */
 function everydayFor(db: Db, today: string) {
-  const day = periodDay(db), first = db.select({ d: sql<string | null>`min(${transaction.date})` }).from(transaction).get()?.d ?? null
-  const started = appStart(db), firstDate = [first, started].filter((x): x is string => !!x).sort()[0] ?? null
-  const from = addDays(today, -90)
-  const liquid = new Set(db.select().from(account).all().filter((a) => LIQUID.includes(a.type)).map((a) => a.id))
-  const settled = new Set(occurrencesBetween(db, addDays(from, -6), addDays(today, 6)).flatMap((o) => (o.paid ? [o.paid.id] : [])))
-  const cats = listCategories(db), parent = new Map(cats.map((c) => [c.id, c.parentId]))
-  const budgeted = new Set(getBudget(db, periodOf(from, day), periodOf(today, day)).flatMap((m) => m.rows.filter((r) => r.kind === 'depense').map((r) => `${m.month}|${r.categoryId}`)))
-  const isBudgeted = (k: string, c: string | null) => !!c && (budgeted.has(`${k}|${c}`) || budgeted.has(`${k}|${parent.get(c)}`))
-  const txs = db.select({ id: transaction.id, date: transaction.date, amount: transaction.amountEur, c: transaction.categoryId, acc: transaction.accountId }).from(transaction)
-    .where(and(gte(transaction.date, from), lte(transaction.date, today), isNull(transaction.transferGroupId), isNull(transaction.plannedRef), sql`${transaction.amountEur} < 0`)).all()
-  // ponytail: une opération ventilée compte entière dans le quotidien, même si une part est budgétée
-  return everydayRate(txs.filter((t) => liquid.has(t.acc) && !settled.has(t.id) && !isBudgeted(periodOf(t.date, day), t.c)), today, firstDate)
+  const cur = periodOf(today, periodDay(db))
+  const hasEnvelopes = getBudget(db, cur, cur)[0]!.rows.some((r) => r.kind === 'depense' && !r.items.length)
+  return { dailyEveryday: 0, observedDays: 0, confidence: (hasEnvelopes ? 'ok' : 'none') as 'ok' | 'none' }
 }
 
 function buildFor(db: Db, today: string, horizon: number, scope: 'liquid' | 'total') {
@@ -200,7 +195,11 @@ export function tickLine(db: Db, categoryId: string, period: string, amount: num
   const { start, end } = { start: periodStart(period, periodDay(db)), end: periodEnd(period, periodDay(db)) }
   if (start > today) throw new Error('Cette période n’a pas encore commencé.')
   const date = today > end ? end : today
-  const signed = cat.kind === 'revenu' ? Math.abs(amount) : -Math.abs(amount)
+  // déjà noté dans le Journal pour ce poste : on n'enregistre que ce qui manque, sinon la dépense compterait deux fois
+  const already = getBudget(db, period, period)[0]?.rows.find((r) => r.categoryId === categoryId)?.actual ?? 0
+  const rest = Math.abs(amount) - Math.max(0, already)
+  if (rest <= 0) return
+  const signed = cat.kind === 'revenu' ? rest : -rest
   db.insert(transaction).values({ accountId: acc.id, date, amount: signed, currency: 'EUR', amountEur: signed,
     label: cat.name, labelNorm: normalizeLabel(cat.name), categoryId, plannedRef: ref }).run()
 }
@@ -287,13 +286,22 @@ export function actualsBetween(db: Db, from: string, to: string): Actuals {
   const day = periodDay(db), lo = addDays(periodStart(from, day), -10), hi = addDays(periodEnd(to, day), 10)
   const range = and(gte(transaction.date, lo), lte(transaction.date, hi), isNull(transaction.transferGroupId))
   const override = new Map<string, string>()
-  for (const r of listRecurring(db).filter((x) => x.active)) {
+  // une opération reconnue comme une échéance (par carte OU par virement) est classée dans la catégorie de l'échéance :
+  // c'est une charge, pas une dépense « hors budget », même si elle n'a pas de catégorie dans le Journal
+  const asCategory = new Map<string, string>()
+  const recs = listRecurring(db)
+  for (const r of recs.filter((x) => x.active)) {
     const dates = occurrences(r, lo, hi)
-    for (const [date, t] of matchOccurrences(dates, matchingTxs(db, r).filter((t) => t.date >= lo && t.date <= hi), r)) override.set(t.id, periodOf(date, day))
+    for (const [date, t] of matchOccurrences(dates, matchingTxs(db, r).filter((t) => t.date >= lo && t.date <= hi), r)) {
+      override.set(t.id, periodOf(date, day))
+      if (r.categoryId) asCategory.set(t.id, r.categoryId)
+    }
   }
   for (const [ref, t] of pointed(db)) {
-    const [kind, , rest] = [ref.split(':')[0], ref.split(':')[1], ref.split(':').slice(2).join(':')]
+    const [kind, recId, rest] = [ref.split(':')[0], ref.split(':')[1], ref.split(':').slice(2).join(':')]
     override.set(t.id, kind === 'rec' ? periodOf(rest, day) : rest)
+    const c = kind === 'rec' ? recs.find((r) => r.id === recId)?.categoryId : null
+    if (c) asCategory.set(t.id, c)
   }
   const keyOf = (id: string, date: string) => override.get(id) ?? periodOf(date, day)
   const out: Actuals = new Map()
@@ -305,7 +313,7 @@ export function actualsBetween(db: Db, from: string, to: string): Actuals {
   }
   const splitTx = new Set(db.selectDistinct({ id: transactionSplit.transactionId }).from(transactionSplit).all().map((x) => x.id))
   for (const t of db.select({ id: transaction.id, date: transaction.date, c: transaction.categoryId, a: transaction.amountEur }).from(transaction).where(range).all())
-    if (!splitTx.has(t.id)) add(keyOf(t.id, t.date), t.c ?? '', t.a)
+    if (!splitTx.has(t.id)) add(keyOf(t.id, t.date), asCategory.get(t.id) ?? t.c ?? '', t.a)
   // part en EUR d'une ventilation = part × (montant EUR / montant d'origine)
   for (const s of db.select({ id: transaction.id, date: transaction.date, c: transactionSplit.categoryId, part: transactionSplit.amount, a: transaction.amountEur, o: transaction.amount })
     .from(transactionSplit).innerJoin(transaction, eq(transaction.id, transactionSplit.transactionId)).where(range).all())

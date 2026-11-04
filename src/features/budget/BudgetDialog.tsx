@@ -6,7 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Row, Scope } from '@/core/budget'
-import { parseAmount } from '@/core/money'
+import { evalAmount } from '@/core/money'
 import * as b from '@/db/budgetRepo'
 import { mutate, useDb } from '@/app/store'
 import { attempt, DaySelect, MonthPicker, useCategories } from '@/app/ui'
@@ -39,7 +39,7 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
       const ok = attempt(() => mutate((d) => {
         const id = kindChanged ? b.changeLineKind(d, categoryId, kind) : categoryId // passe aussi les échéances au bon signe
         for (const e of itemEdits) {
-          const c = parseAmount(e.amount)
+          const c = evalAmount(e.amount)
           if (c === null || c < 0) throw new Error(`Montant invalide pour ${e.name}`)
           const orig = fromItems.find((i) => i.id === e.id)!
           if (c !== Math.abs(orig.amount) || e.day !== Number(orig.date.slice(8, 10)))
@@ -52,7 +52,7 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
       if (ok) onClose()
       return
     }
-    const cents = parseAmount(amount)
+    const cents = evalAmount(amount)
     if (cents === null || cents < 0) return attempt(() => { throw new Error('Montant invalide') })
     const ok = attempt(() => mutate((d) => {
       const id = kindChanged ? b.changeLineKind(d, categoryId, kind) : categoryId

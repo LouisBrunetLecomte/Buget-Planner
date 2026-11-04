@@ -16,7 +16,7 @@ const nav = (page: Page, route: string) => page.evaluate((r) => { location.hash 
 
 test('création, verrouillage, mauvais mot de passe, persistance', async ({ page }) => {
   await createVault(page)
-  await expect(page.getByText(/À vivre jusqu’à ta paie|Il manque/)).toBeVisible()
+  await expect(page.getByText(/Libre à dépenser|Il te manque/)).toBeVisible()
   await page.getByRole('button', { name: 'Verrouiller' }).click()
   await page.getByLabel('Mot de passe').fill('pas-le-bon')
   await page.getByRole('button', { name: 'Déverrouiller' }).click()
@@ -70,7 +70,7 @@ test('budget : exception « ce mois seulement » puis annulation en un clic', as
 
 test('accessibilité (axe, WCAG AA) : aucune violation grave', async ({ page }) => {
   await createVault(page)
-  for (const route of ['accueil', 'operations', 'budget', 'recurrences', 'analyses', 'patrimoine', 'simulations', 'import', 'reglages']) {
+  for (const route of ['accueil', 'bilan', 'operations', 'budget', 'recurrences', 'analyses', 'patrimoine', 'simulations', 'import', 'reglages']) {
     await nav(page, route)
     await expect(page.locator('main h1')).toBeVisible()
     await page.waitForTimeout(800) // animations des graphiques

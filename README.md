@@ -10,10 +10,17 @@ npm install
 ```
 
 Buget s'ouvre ensuite comme n'importe quelle app (Launchpad, Spotlight, Dock). C'est une fenêtre native (Swift + WebKit) qui affiche l'app web embarquée, servie uniquement sur `127.0.0.1:47219`.
-- **Données** : elles sont chiffrées dans le stockage WebKit propre à l'app (`~/Library/WebKit/local.louloubl.Buget`) et sont conservées quand tu réinstalles une nouvelle version.
+- **Données** : elles sont chiffrées dans le stockage WebKit propre à l'app (le dossier WebKit de l’app dans `~/Library/WebKit`) et sont conservées quand tu réinstalles une nouvelle version.
 - **Téléchargements** (sauvegardes, PDF, CSV) : ils arrivent dans `~/Téléchargements`.
-- **Touch ID** : après la création de la base ou un premier déverrouillage au mot de passe, ton empreinte suffit pour ouvrir Buget. Le mot de passe reste utilisable en secours (« Utiliser le mot de passe »). L'option se règle dans Réglages → Touch ID.
+- **Touch ID** : après la création de la base ou un premier déverrouillage au mot de passe, ton empreinte suffit pour ouvrir Buget. Le mot de passe reste utilisable en secours (« Utiliser le mot de passe »). L'option se règle dans Paramètres → Touch ID.
 - **Prérequis** : macOS 26 et les outils de ligne de commande Xcode (`xcode-select --install`).
+
+## En ligne (site Odoo)
+
+Buget est aussi en ligne sur **https://mybudget.odoo.com**. Chaque visiteur a sa propre base, chiffrée dans son navigateur : rien n'est envoyé à Odoo.
+- **Mise à jour** : chaque push sur `main` lance l'action « Version Odoo » (`.github/workflows/odoo.yml`), qui publie `buget.html.gz` sur la branche `odoo`. La page Odoo le télécharge à chaque visite.
+- **Secours** : si GitHub ne répond pas, la page charge la copie stockée dans Odoo (pièce jointe). Pour la rafraîchir : `npm run build:odoo`, puis remplacer la pièce jointe `buget-app.gz`.
+- **Limites** : pas de lecture des tickets (OCR) en ligne ; les données d'un navigateur ne sont pas celles de l'app Mac (passer par une sauvegarde).
 
 ## Installer et lancer (navigateur)
 
@@ -24,9 +31,9 @@ npm install        # copie aussi les fichiers de l'OCR dans public/ocr
 npm run dev        # http://localhost:5173
 ```
 
-Au premier lancement, choisis un mot de passe (8 caractères minimum) : la base démarre **vide** et un **tutoriel** te guide (comptes, opérations, budget, charges fixes, sauvegarde). Il peut être revu dans Réglages → Apparence et aide. Pour essayer avec 6 mois de données fictives, ouvre l'app dans le navigateur avec `?demo` dans l'adresse (par exemple `http://localhost:5173/?demo`).
+Au premier lancement, choisis un mot de passe (8 caractères minimum) : la base démarre **vide** et un **tutoriel** te guide (comptes, opérations, budget, charges fixes, sauvegarde). Il peut être revu dans Paramètres → Apparence et aide. Pour essayer avec 6 mois de données fictives, ouvre l'app dans le navigateur avec `?demo` dans l'adresse (par exemple `http://localhost:5173/?demo`).
 
-⚠️ **Le mot de passe est irrécupérable.** Télécharge régulièrement une sauvegarde (Réglages → Sauvegarde) ; l'accueil te le rappelle après 30 jours.
+⚠️ **Le mot de passe est irrécupérable.** Télécharge régulièrement une sauvegarde (Paramètres → Sauvegarde) ; l'accueil te le rappelle après 30 jours.
 
 | Commande | Rôle |
 |---|---|
@@ -41,8 +48,9 @@ Au premier lancement, choisis un mot de passe (8 caractères minimum) : la base 
 | Écran | Contenu |
 |---|---|
 | **Accueil** | Solde total, reste à vivre par jour, budget du mois, taux d'épargne, alertes, prochaines échéances, score de santé financière, faits marquants, premiers pas |
-| **Opérations** | Saisie rapide (touche `n`), recherche, filtres, actions en masse, ventilation, tags, notes, pièces jointes avec lecture du ticket (OCR) |
-| **Budget** | **Cases « payé / reçu »** à cocher quand c'est fait (l'opération est enregistrée, le solde et tout le reste suivent). **De paie à paie** : avec un salaire le 12, le budget va du 12 au 11 du mois suivant (réglable dans Réglages → Mois budgétaire). Lignes par catégorie ou **libellé libre**, valables par défaut « tous les mois à partir de » un mois choisi ; exceptions pour un seul mois ; lignes triées de la plus grosse à la plus petite ; report, base zéro, 50/30/20, vue annuelle, projection |
+| **Opérations** | **Classement automatique** d'après l'établissement (enseignes et types de commerce : boulangerie, pharmacie, station-service…), à la saisie, à l'import et via « Classer automatiquement » ; tes corrections passent avant. Saisie rapide (touche `n`) avec **calculatrice** (`75/2`, `12,50+3`), vue **Liste ou Calendrier** (entrées, sorties et solde jour par jour, prévu après aujourd’hui), recherche, filtres, actions en masse, ventilation, tags, notes, pièces jointes avec lecture du ticket (OCR) |
+| **Budget** | **Cases « payé / reçu »** à cocher quand c'est fait (l'opération est enregistrée, le solde et tout le reste suivent). **De paie à paie** : avec un salaire le 12, le budget va du 12 au 11 du mois suivant (réglable dans Paramètres → Mois budgétaire). Lignes par catégorie ou **libellé libre**, valables par défaut « tous les mois à partir de » un mois choisi ; exceptions pour un seul mois ; lignes triées de la plus grosse à la plus petite ; report, base zéro, 50/30/20, vue annuelle, projection |
+| **Bilan** | Profil de la période, conseils, **défis et séries** (jours sans dépense, budget tenu, 20 % gardés, période d’affilée dans le budget), budgets tenus / à resserrer |
 | **Récurrences** | Charges fixes, abonnements, revenus **à date précise** (« le 28 », « le dernier jour du mois ») ; ils alimentent automatiquement budget, calendrier, reste à vivre et prévisions. Les modifier change tout, « à partir de » un mois choisi. Détection automatique, hausses de prix, prélèvements manquants |
 | **Analyses** | Solde et prévision à 3, 6 ou 12 mois, revenus/dépenses, Sankey, répartition, comparaison avec l'année précédente |
 | **Patrimoine** | Objectifs d'épargne, règles d'arrondi et de pourcentage, crédits (amortissement, remboursement anticipé, boule de neige / avalanche), patrimoine net, placements |
@@ -50,7 +58,7 @@ Au premier lancement, choisis un mot de passe (8 caractères minimum) : la base 
 | Plus → **Import** | CSV, OFX, QIF, relevés PDF ; mapping mémorisé, doublons ignorés, import annulable |
 | Plus → **Rapports** | Rapports PDF mensuel et annuel, exports CSV/JSON, récapitulatif fiscal, activité freelance (TVA, notes de frais, export comptable) |
 | Plus → **Assistant** | Questions en langage naturel à un modèle d'IA local (optionnel) |
-| Plus → **Réglages** | Alertes, notifications, modules, historique et annulation, mot de passe, sauvegarde, taux de change, suppression des données |
+| **Paramètres** (icône ⚙︎ en haut) | **Réinitialiser l’app** (remise à zéro en gardant le mot de passe, ou tout effacer), alertes, notifications, **rappel quotidien** pour noter ses dépenses, modules, historique et annulation, mot de passe, sauvegarde, taux de change, suppression des données |
 
 En haut à droite : **annuler** la dernière modification (⌘Z / Ctrl+Z), **masquer les montants** (mode confidentialité), thème, verrouillage.
 
@@ -78,7 +86,7 @@ L'app est une **PWA** : elle s'installe comme une application et marche hors lig
 2. Ouvre l'adresse sur ton téléphone :
    - iPhone : Safari → Partager → « Sur l'écran d'accueil » ;
    - Android : Chrome → menu → « Installer l'application ».
-3. **Passer tes données d'un appareil à l'autre** : Réglages → **Télécharger une sauvegarde**, transfère le fichier (AirDrop, iCloud Drive…), puis à l'écran de déverrouillage de l'autre appareil choisis **Restaurer une sauvegarde**, avec le même mot de passe.
+3. **Passer tes données d'un appareil à l'autre** : Paramètres → **Télécharger une sauvegarde**, transfère le fichier (AirDrop, iCloud Drive…), puis à l'écran de déverrouillage de l'autre appareil choisis **Restaurer une sauvegarde**, avec le même mot de passe.
 
 Le réseau local seul (`npx vite --host`) ne suffit pas : le chiffrement exige HTTPS. Il faut un certificat local, par exemple avec [mkcert](https://github.com/FiloSottile/mkcert).
 
@@ -87,7 +95,7 @@ Le réseau local seul (`npx vite --host`) ne suffit pas : le chiffrement exige H
 ## Assistant IA local (optionnel)
 
 1. Installe [Ollama](https://ollama.com) (gratuit), puis : `ollama pull llama3.2`.
-2. Réglages → Modules optionnels → coche **Assistant IA local**, puis clique sur **Tester**.
+2. Paramètres → Modules optionnels → coche **Assistant IA local**, puis clique sur **Tester**.
 3. L'app hébergée sur une autre adresse que `localhost` doit être autorisée par Ollama : lance `OLLAMA_ORIGINS="https://ton-site.pages.dev" ollama serve`.
 
 L'assistant ne reçoit qu'un résumé chiffré (totaux, catégories, échéances, objectifs), jamais la liste de tes opérations. Il ne parle qu'à une adresse locale ou du réseau local.
@@ -97,7 +105,7 @@ L'assistant ne reçoit qu'un résumé chiffré (totaux, catégories, échéances
 - **Chiffrement** : base chiffrée en AES-256-GCM, clé dérivée du mot de passe (PBKDF2, 600 000 itérations).
 - **Verrouillage** : automatique après 15 minutes d'inactivité.
 - **Aucune télémétrie, aucun tracker.** Seuls appels réseau : les taux BCE (devise et dates uniquement) et Ollama en local. La politique de sécurité du contenu (CSP) de la version de production bloque tout le reste.
-- **RGPD** : export complet (CSV, JSON), sauvegarde chiffrée, suppression de toutes les données (Réglages).
+- **RGPD** : export complet (CSV, JSON), sauvegarde chiffrée, suppression de toutes les données (Paramètres).
 - **Préférences hors base** : seules le thème, le mode confidentialité et le dernier compte utilisé sont en clair dans le navigateur ; ce ne sont pas des données bancaires.
 
 ## Structure

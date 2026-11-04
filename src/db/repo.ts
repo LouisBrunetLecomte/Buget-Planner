@@ -4,6 +4,7 @@ import { account, category, fxRate, importBatch, importProfile, rule, setting, t
 import { normalizeLabel } from '@/core/labels'
 import { categorize, learnPattern, ruleMatches } from '@/core/rules'
 import { withImportKeys } from '@/core/dedup'
+import { guessCategories } from '@/core/merchants'
 import { findTransferPairs } from '@/core/transfers'
 import { validateSplits } from '@/core/splits'
 import { rateOn } from '@/core/fx'
@@ -86,7 +87,7 @@ export function saveRates(db: Db, currency: string, rates: Record<string, number
 function toEur(db: Db, currency: string, date: string, amount: number): { amountEur: number; fxRate: number | null } {
   if (currency === 'EUR') return { amountEur: amount, fxRate: null }
   const rate = rateOn(cachedRates(db, currency), date)
-  if (rate === null) throw new Error(`Aucun taux ${currency}→EUR connu. Saisis-en un dans Réglages > Devises.`)
+  if (rate === null) throw new Error(`Aucun taux ${currency}→EUR connu. Saisis-en un dans Paramètres > Devises.`)
   return { amountEur: convert(amount, rate), fxRate: rate }
 }
 
@@ -114,13 +115,34 @@ export function listTransactions(db: Db, f: TxFilter = {}) {
   return db.select().from(transaction).where(and(...conds)).orderBy(desc(transaction.date), desc(transaction.createdAt)).limit(f.limit ?? 500).all()
 }
 
+const fold = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+type Cat = { id: string; name: string; kind: string }
+type RuleRow = typeof rule.$inferSelect
+/**
+ * Catégorie automatique : tes règles d'abord (seulement celles du bon sens : pas de catégorie de revenu pour une dépense),
+ * puis l'établissement reconnu (enseigne ou type de commerce, voir core/merchants.ts).
+ */
+export function autoCategory(rules: RuleRow[], cats: Cat[], labelNorm: string, accountId: string, amount: number): string | null {
+  const kind = new Map(cats.map((c) => [c.id, c.kind]))
+  const fits = (id: string) => { const k = kind.get(id); return !amount || k === 'transfert' || k === (amount > 0 ? 'revenu' : 'depense') }
+  const byRule = categorize(rules.filter((r) => fits(r.categoryId)), labelNorm, accountId)
+  if (byRule || !amount) return byRule
+  for (const name of guessCategories(labelNorm, amount)) {
+    const c = cats.find((x) => fold(x.name) === fold(name) && fits(x.id))
+    if (c) return c.id
+  }
+  return null
+}
+export const autoCategoryFor = (db: Db, labelNorm: string, accountId: string, amount: number) =>
+  autoCategory(db.select().from(rule).all(), listCategories(db), labelNorm, accountId, amount)
+
 export interface NewTx { accountId: string; date: string; amount: number; label: string; categoryId?: string | null; notes?: string | null }
 
 export function addTransaction(db: Db, v: NewTx) {
   const acc = db.select().from(account).where(eq(account.id, v.accountId)).get()
   if (!acc) throw new Error('Compte introuvable')
   const labelNorm = normalizeLabel(v.label)
-  const categoryId = v.categoryId !== undefined ? v.categoryId : categorize(db.select().from(rule).all(), labelNorm, v.accountId)
+  const categoryId = v.categoryId !== undefined ? v.categoryId : autoCategoryFor(db, labelNorm, v.accountId, v.amount)
   return db.insert(transaction).values({ ...v, labelNorm, categoryId, currency: acc.currency, ...toEur(db, acc.currency, v.date, v.amount) }).returning().get()
 }
 
@@ -158,13 +180,13 @@ export const deleteTransactions = (db: Db, ids: string[]) => db.delete(transacti
 export const setCategoryBulk = (db: Db, ids: string[], categoryId: string | null) =>
   db.update(transaction).set({ categoryId, updatedAt: now }).where(inArray(transaction.id, ids)).run()
 
-/** Réapplique les règles aux opérations non catégorisées (après ajout d'une règle). */
+/** Classe les opérations non catégorisées : règles, puis établissement reconnu. */
 export function applyRulesToUncategorized(db: Db): number {
-  const rules = db.select().from(rule).all()
-  const todo = db.select().from(transaction).where(and(isNull(transaction.categoryId), isNull(transaction.transferGroupId))).all()
+  const rules = db.select().from(rule).all(), cats = listCategories(db), split = listSplitTxIds(db)
+  const todo = db.select().from(transaction).where(and(isNull(transaction.categoryId), isNull(transaction.transferGroupId))).all().filter((t) => !split.has(t.id))
   let n = 0
   for (const t of todo) {
-    const c = categorize(rules, t.labelNorm, t.accountId)
+    const c = autoCategory(rules, cats, t.labelNorm, t.accountId, t.amount)
     if (c) { db.update(transaction).set({ categoryId: c }).where(eq(transaction.id, t.id)).run(); n++ }
   }
   return n
@@ -202,8 +224,8 @@ export interface ImportPreview { rows: (RawTx & { importKey: string; labelNorm: 
 
 export function previewImport(db: Db, accountId: string, rows: RawTx[]): ImportPreview {
   const existing = new Set(db.select({ k: transaction.importKey }).from(transaction).where(eq(transaction.accountId, accountId)).all().map((r) => r.k))
-  const rules = db.select().from(rule).all()
-  return { rows: withImportKeys(rows).map((r) => ({ ...r, duplicate: existing.has(r.importKey), categoryId: categorize(rules, r.labelNorm, accountId) })) }
+  const rules = db.select().from(rule).all(), cats = listCategories(db)
+  return { rows: withImportKeys(rows).map((r) => ({ ...r, duplicate: existing.has(r.importKey), categoryId: autoCategory(rules, cats, r.labelNorm, accountId, r.amount) })) }
 }
 
 export function importRows(db: Db, accountId: string, fileName: string, rows: RawTx[]) {

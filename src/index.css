@@ -133,6 +133,7 @@
 :root {
   --viz-1: #0071e3;      /* série 1 : revenus, solde (bleu Apple) */
   --viz-2: #eb6834;      /* série 2 : dépenses */
+  --viz-3: #1baf7a;      /* série 3 : budget prévu (3 premières teintes validées entre elles) */
   --viz-deemph: #c3c2b7; /* contexte (année précédente, liens du Sankey) */
   --viz-grid: #e1e0d9;
   --viz-axis: #c3c2b7;
@@ -142,6 +143,7 @@
 .dark {
   --viz-1: #2997ff;
   --viz-2: #d95926;
+  --viz-3: #199e70;
   --viz-deemph: #52514e;
   --viz-grid: #2c2c2a;
   --viz-axis: #383835;

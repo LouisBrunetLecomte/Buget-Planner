@@ -6,7 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { addDays, addMonths, daysInMonth, monthsBetween, today } from '@/core/dates'
 import { type MonthBudget, type Row } from '@/core/budget'
-import { formatMoney, parseAmount } from '@/core/money'
+import { formatMoney, evalAmount } from '@/core/money'
 import { normalizeLabel } from '@/core/labels'
 import { periodKeyFor } from '@/core/period'
 import * as b from '@/db/budgetRepo'
@@ -60,7 +60,7 @@ function NewLine({ month }: { month: string }) {
     if (c.kind === 'depense' || c.kind === 'revenu') setKind(c.kind)
   }
   function add() {
-    const name = label.trim(), cents = parseAmount(amount)
+    const name = label.trim(), cents = evalAmount(amount)
     if (!name) return toast.error('Donne un libellé ou choisis une catégorie')
     if (cents === null || cents <= 0) return toast.error('Montant invalide')
     if ((repeat === 'year' || kind === 'epargne') && !day) return toast.error('Choisis la date')
@@ -98,7 +98,7 @@ function NewLine({ month }: { month: string }) {
           )}
         </div>
         <div className="grid gap-1"><Label htmlFor="nl-k">Type</Label>
-          <Select value={kind} onValueChange={(v) => { setKind(v as typeof kind); setPicked(null) }}>
+          <Select value={kind} onValueChange={(v) => { setKind(v as typeof kind); setPicked(null); if (v === 'epargne') setRepeat('month') }}>
             <SelectTrigger id="nl-k" className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="depense">Dépense</SelectItem><SelectItem value="revenu">Revenu</SelectItem><SelectItem value="epargne">Virement vers mon épargne</SelectItem></SelectContent>
           </Select>
@@ -110,13 +110,21 @@ function NewLine({ month }: { month: string }) {
             <Select value={to ?? ''} onValueChange={setTo}><SelectTrigger id="nl-to" className="w-full"><SelectValue placeholder="Compte épargne" /></SelectTrigger>
               <SelectContent>{savings.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select></div>
         : <p className="text-sm text-muted-foreground">Ajoute d’abord ton livret dans <a className="text-primary underline" href="#/comptes">Comptes</a>.</p>)}
+      {kind !== 'epargne' && (
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <Checkbox checked={repeat === 'once'} onCheckedChange={(v) => setRepeat(v === true ? 'once' : 'month')} />
+          {kind === 'revenu' ? 'Revenu isolé' : 'Dépense isolée'} : une seule fois, pas récurrente
+        </label>
+      )}
       <div className="grid gap-3 md:grid-cols-[11rem_11rem_1fr_1fr_auto] md:items-end">
-        <div className="grid gap-1"><Label htmlFor="nl-r">Répéter</Label>
-          <Select value={kind === 'epargne' && repeat === 'once' ? 'month' : repeat} onValueChange={(v) => setRepeat(v as Repeat)}>
-            <SelectTrigger id="nl-r" className="w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>{(Object.keys(REPEAT) as Repeat[]).filter((r) => kind !== 'epargne' || r === 'month').map((r) => <SelectItem key={r} value={r}>{REPEAT[r]}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
+        {repeat === 'once' ? <span /> : (
+          <div className="grid gap-1"><Label htmlFor="nl-r">Répéter</Label>
+            <Select value={kind === 'epargne' ? 'month' : repeat} onValueChange={(v) => setRepeat(v as Repeat)}>
+              <SelectTrigger id="nl-r" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>{(['month', 'year'] as Repeat[]).filter((r) => kind !== 'epargne' || r === 'month').map((r) => <SelectItem key={r} value={r}>{REPEAT[r]}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="grid gap-1"><Label htmlFor="nl-d">Date</Label><DaySelect id="nl-d" value={day} onChange={setDay} allowNone={repeat !== 'year' && kind !== 'epargne'} /></div>
         <div className="grid gap-1"><span className="text-sm font-medium">{repeat === 'once' ? 'Période' : 'À partir de'}</span><MonthPicker label={repeat === 'once' ? 'Période' : 'À partir de'} value={from} onChange={(m) => m && setFrom(m)} format={(m) => title(m)} /></div>
         {repeat !== 'once' && day ? <div className="grid gap-1"><span className="text-sm font-medium">Jusqu’à (facultatif)</span><MonthPicker label="Jusqu’à" allLabel="Sans fin" value={until} onChange={setUntil} format={(m) => title(m)} /></div> : <span />}
@@ -224,7 +232,8 @@ function MonthView({ month }: { month: string }) {
         // une dépense « une seule fois » n'a pas de montant de base : la retirer, c'est la supprimer
         undoLabel: r.exception && r.base === null ? 'supprimer' : undefined,
         undo: r.exception ? () => { mutate((x) => b.removeException(x, r.exception!.id), { label: r.base === null ? 'Ligne supprimée' : 'Exception annulée' }); toast.success(r.base === null ? 'Supprimé' : 'Exception annulée') } : undefined,
-        tick: avail > 0 ? { checked: ticked, disabled: d.future, title: d.future ? 'Période à venir' : `Coche quand c’est ${verb} : le montant prévu est enregistré`,
+        tick: avail > 0 ? !ticked && r.actual >= avail ? { checked: true, disabled: true, title: `Déjà noté dans le Journal : ${formatMoney(r.actual)}`, onChange: () => {} }
+          : { checked: ticked, disabled: d.future, title: d.future ? 'Période à venir' : r.actual > 0 && !ticked ? `Coche quand c’est ${verb} : seuls les ${formatMoney(avail - r.actual)} qui manquent sont enregistrés` : `Coche quand c’est ${verb} : le montant prévu est enregistré`,
           onChange: (v) => attempt(() => mutate((x) => (v ? b.tickLine(x, r.categoryId, month, avail, today()) : b.untick(x, b.lineRef(r.categoryId, month))), { label: `${name(r.categoryId)} ${v ? verb : `non ${verb}`}` })) } : null,
       }
       ;(r.kind === 'revenu' ? rev : variable).push(line)
