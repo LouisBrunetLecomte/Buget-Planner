@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { createVault, MIN_PASSWORD, restoreBackup, unlock } from './store'
+import { createVault, localBackupText, MIN_PASSWORD, resolveConflict, restoreBackup, syncConflict, unlock } from './store'
+import { download } from './files'
 import { enrollIfPossible, hasTouchIdBridge, touchIdDisable, touchIdStatus, touchIdUnlock } from './macAuth'
 
 export function LockScreen({ mode }: { mode: 'new' | 'locked' }) {
@@ -49,6 +50,30 @@ export function LockScreen({ mode }: { mode: 'new' | 'locked' }) {
     if (pw !== pw2) throw new Error('Les deux mots de passe diffèrent.')
     await withPassword(() => createVault(pw, demo), pw)
   })
+
+  if (mode === 'locked' && syncConflict()) return (
+    <main className="grid min-h-dvh place-items-center p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-xl">Deux bases Budget</CardTitle>
+          <CardDescription>
+            Ton compte Quansi a déjà une base Budget, venant d’un autre appareil. Cet appareil a aussi la sienne, jamais synchronisée.
+            Laquelle garder ? L’autre sera remplacée sur tous tes appareils.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          <Button disabled={busy} onClick={() => void go(() => resolveConflict('compte'))}>Garder celle du compte</Button>
+          <Button variant="outline" disabled={busy} onClick={() => void go(() => resolveConflict('appareil'))}>Garder celle de cet appareil</Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => void go(async () => {
+            const t = await localBackupText()
+            if (t) download(t, `budget-cet-appareil-${new Date().toISOString().slice(0, 10)}.json`, 'application/json')
+          })}>Télécharger d’abord une sauvegarde de cet appareil</Button>
+          <p className="text-xs text-muted-foreground">Avec la base du compte, déverrouille ensuite avec le mot de passe choisi sur l’autre appareil.</p>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        </CardContent>
+      </Card>
+    </main>
+  )
 
   return (
     <main className="grid min-h-dvh place-items-center p-4">

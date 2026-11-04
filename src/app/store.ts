@@ -35,6 +35,9 @@ export async function boot() {
 
 // ---------- synchronisation avec le compte Quansi (voir sync.ts) ----------
 let pendingPush = false
+// cet appareil a une base jamais synchronisée ET le compte en a déjà une : on demande laquelle garder, sans rien écraser
+let conflict: { version: number; sealed: Sealed } | null = null
+export const syncConflict = () => conflict
 let pushChain = Promise.resolve()
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -46,10 +49,23 @@ async function pullBeforeOpen() {
   if (owner && owner !== sync.currentUid()) { await wipeVault(); sync.setKnownVersion(0) }
   const r = await sync.fetchNewer()
   if (!r) return
+  if (r.sealed && sync.knownVersion() === 0 && await loadVault()) { conflict = { version: r.version, sealed: r.sealed }; return }
   if (r.sealed) { await saveVault(r.sealed); sync.setVaultOwner() }
   else if (sync.knownVersion() > 0) await wipeVault() // effacé depuis un autre appareil (« Tout effacer »)
   sync.setKnownVersion(r.version)
 }
+
+/** Choix de l'utilisateur en cas de conflit : garder la base du compte, ou celle de cet appareil (qui part alors sur le compte). */
+export async function resolveConflict(keep: 'compte' | 'appareil') {
+  const c = conflict
+  if (!c) return
+  if (keep === 'compte') { await saveVault(c.sealed); sync.setKnownVersion(c.version); sync.setVaultOwner() }
+  else { sync.setKnownVersion(c.version); const v = await loadVault(); if (v) await push(v) }
+  conflict = null
+  set({ status: 'locked' })
+}
+/** Base de cet appareil, telle quelle (chiffrée), au format sauvegarde : pour la garder avant de choisir. */
+export async function localBackupText() { const v = await loadVault(); return v ? sync.sealedToJson(v) : null }
 
 /** Envoie le coffre chiffré sur le compte (en série ; en cas d'échec, on réessaie au prochain passage). */
 function push(v: Sealed) {
@@ -59,7 +75,7 @@ function push(v: Sealed) {
 
 /** App ouverte : reprend les modifications faites sur un autre appareil. */
 async function pullWhileOpen() {
-  if (!sync.syncEnabled() || dirty || (state.status !== 'open' && state.status !== 'locked' && state.status !== 'new')) return
+  if (!sync.syncEnabled() || dirty || conflict || (state.status !== 'open' && state.status !== 'locked' && state.status !== 'new')) return
   if (pendingPush) { const v = await loadVault(); if (v) await push(v); return }
   const r = await sync.fetchNewer().catch(() => null)
   if (!r || dirty || pendingPush) return
@@ -98,6 +114,7 @@ export async function createVault(password: string, demo: boolean) {
 }
 
 export async function unlock(password: string) {
+  if (conflict) throw new Error('Choisis d’abord quelle base garder.')
   const v = await loadVault()
   if (!v) return set({ status: 'new' })
   const k = await deriveKey(password, v.salt)
