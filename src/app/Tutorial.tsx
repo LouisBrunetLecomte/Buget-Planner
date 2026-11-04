@@ -1,3 +1,4 @@
+import { syncEnabled } from './sync'
 import { useState } from 'react'
 import { ArrowLeft, ArrowRight, Fingerprint, Lock, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -61,7 +62,7 @@ export function Tutorial() {
       title: 'Bienvenue dans Buget 👋',
       body: (
         <ul className="grid gap-3 text-sm">
-          <li className="flex gap-3"><Lock className="mt-0.5 size-5 shrink-0 text-primary" />Tes données restent sur cet appareil, chiffrées avec ton mot de passe. Rien n’est envoyé sur Internet.</li>
+          <li className="flex gap-3"><Lock className="mt-0.5 size-5 shrink-0 text-primary" />{syncEnabled() ? 'Tes données sont chiffrées avec ton mot de passe avant d’être synchronisées sur ton compte Quansi : personne d’autre ne peut les lire.' : 'Tes données restent sur cet appareil, chiffrées avec ton mot de passe. Rien n’est envoyé sur Internet.'}</li>
           {hasTouchIdBridge && <li className="flex gap-3"><Fingerprint className="mt-0.5 size-5 shrink-0 text-primary" />À la prochaine ouverture, ton empreinte (Touch ID) suffira.</li>}
           <li className="flex gap-3"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />En quelques petites étapes, on prépare ton budget. Chaque étape peut être passée et refaite plus tard.</li>
         </ul>

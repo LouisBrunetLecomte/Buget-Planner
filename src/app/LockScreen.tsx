@@ -1,3 +1,4 @@
+import { syncEnabled } from './sync'
 import { useEffect, useRef, useState } from 'react'
 import { Fingerprint } from 'lucide-react'
 import { toast } from 'sonner'
@@ -56,7 +57,7 @@ export function LockScreen({ mode }: { mode: 'new' | 'locked' }) {
           <CardTitle className="text-xl">{mode === 'new' ? 'Bienvenue' : 'Déverrouiller'}</CardTitle>
           <CardDescription>
             {mode === 'new'
-              ? `Tes données restent sur cet appareil, chiffrées avec ce mot de passe. Il est impossible de le récupérer : note-le bien.${hasTouchIdBridge ? ' Ensuite, ton empreinte suffira pour ouvrir Buget.' : ''}`
+              ? `${syncEnabled() ? 'Tes données sont chiffrées avec ce mot de passe, puis synchronisées sur ton compte Quansi pour tes autres appareils (illisibles pour quiconque sans lui).' : 'Tes données restent sur cet appareil, chiffrées avec ce mot de passe.'} Il est impossible de le récupérer : note-le bien.${hasTouchIdBridge ? ' Ensuite, ton empreinte suffira pour ouvrir Buget.' : ''}`
               : bio && !showPassword ? 'Pose ton doigt sur Touch ID.' : 'Saisis ton mot de passe pour ouvrir ta base.'}
           </CardDescription>
         </CardHeader>
