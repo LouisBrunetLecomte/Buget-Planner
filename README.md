@@ -17,10 +17,11 @@ Buget s'ouvre ensuite comme n'importe quelle app (Launchpad, Spotlight, Dock). C
 
 ## En ligne (site Odoo)
 
-Buget est aussi en ligne sur **https://mybudget.odoo.com**. Chaque visiteur a sa propre base, chiffrée dans son navigateur : rien n'est envoyé à Odoo.
+Buget est aussi en ligne sur **https://quansi.odoo.com**. Chaque visiteur a sa propre base, chiffrée dans son navigateur : rien n'est envoyé à Odoo.
 - **Mise à jour** : chaque push sur `main` lance l'action « Version Odoo » (`.github/workflows/odoo.yml`), qui publie `buget.html.gz` sur la branche `odoo`. La page Odoo le télécharge à chaque visite.
 - **Secours** : si GitHub ne répond pas, la page charge la copie stockée dans Odoo (pièce jointe). Pour la rafraîchir : `npm run build:odoo`, puis remplacer la pièce jointe `buget-app.gz`.
-- **Limites** : pas de lecture des tickets (OCR) en ligne ; les données d'un navigateur ne sont pas celles de l'app Mac (passer par une sauvegarde).
+- **Synchronisation** : dans Quansi, le coffre chiffré est envoyé sur le compte du membre après chaque modification (action Odoo `quansi-sync`), et récupéré à l'ouverture, au retour sur l'app et toutes les 30 s. Le serveur ne peut pas le lire. La dernière version enregistrée gagne (pas de fusion). « Tout effacer » efface aussi la copie du compte.
+- **Limites** : pas de lecture des tickets (OCR) en ligne ; l'app Mac n'est pas synchronisée (passer par une sauvegarde).
 
 ## Installer et lancer (navigateur)
 

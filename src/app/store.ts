@@ -6,6 +6,7 @@ import { seedDefaults } from '@/db/defaults'
 import { seedDemo } from '@/db/seed'
 import { deriveKey, newSalt, open, seal, type Sealed } from '@/core/crypto'
 import { loadVault, saveVault, wipeVault } from './vault'
+import * as sync from './sync'
 
 type State =
   | { status: 'loading' }
@@ -25,8 +26,61 @@ function set(s: State) { state = s; listeners.forEach((l) => l()) }
 const getSQL = async () => (SQL ??= await initSqlJs({ locateFile: () => wasmUrl }))
 
 export async function boot() {
-  try { set((await loadVault()) ? { status: 'locked' } : { status: 'new' }) }
+  try {
+    if (sync.syncEnabled()) await pullBeforeOpen().catch(() => {}) // hors ligne : on garde la copie de l'appareil
+    set((await loadVault()) ? { status: 'locked' } : { status: 'new' })
+  }
   catch (e) { set({ status: 'error', message: e instanceof Error ? e.message : String(e) }) }
+}
+
+// ---------- synchronisation avec le compte Quansi (voir sync.ts) ----------
+let pendingPush = false
+let pushChain = Promise.resolve()
+const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i])
+
+/** Avant le déverrouillage : récupère la copie du compte si elle est plus récente que celle de l'appareil. */
+async function pullBeforeOpen() {
+  const owner = sync.vaultOwner()
+  // coffre d'un autre compte Quansi sur ce navigateur : il est déjà sur son compte, on ne le montre pas
+  if (owner && owner !== sync.currentUid()) { await wipeVault(); sync.setKnownVersion(0) }
+  const r = await sync.fetchNewer()
+  if (!r) return
+  if (r.sealed) { await saveVault(r.sealed); sync.setVaultOwner() }
+  else if (sync.knownVersion() > 0) await wipeVault() // effacé depuis un autre appareil (« Tout effacer »)
+  sync.setKnownVersion(r.version)
+}
+
+/** Envoie le coffre chiffré sur le compte (en série ; en cas d'échec, on réessaie au prochain passage). */
+function push(v: Sealed) {
+  pushChain = pushChain.then(() => sync.upload(v)).then(() => { pendingPush = false }, () => { pendingPush = true })
+  return pushChain
+}
+
+/** App ouverte : reprend les modifications faites sur un autre appareil. */
+async function pullWhileOpen() {
+  if (!sync.syncEnabled() || dirty || (state.status !== 'open' && state.status !== 'locked' && state.status !== 'new')) return
+  if (pendingPush) { const v = await loadVault(); if (v) await push(v); return }
+  const r = await sync.fetchNewer().catch(() => null)
+  if (!r || dirty || pendingPush) return
+  if (!r.sealed) {
+    if (sync.knownVersion() > 0) { // effacé depuis un autre appareil
+      clearTimeout(timer); sqlite?.close(); sqlite = null; key = null; history = []
+      await wipeVault(); sync.setKnownVersion(0); set({ status: 'new' })
+    }
+    return
+  }
+  await saveVault(r.sealed); sync.setKnownVersion(r.version); sync.setVaultOwner()
+  if (state.status === 'open' && key && salt && sameBytes(salt, r.sealed.salt)) {
+    const o = openDb(await getSQL(), await open(key, r.sealed))
+    sqlite?.close(); sqlite = o.sqlite; history = []
+    set({ ...state, db: o.db, version: state.version + 1 })
+  } else if (state.status === 'open') { // mot de passe changé sur l'autre appareil : il faut le nouveau
+    sqlite?.close(); sqlite = null; key = null; history = []; set({ status: 'locked' })
+  } else if (state.status === 'new') set({ status: 'locked' })
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void pullWhileOpen() })
+  setInterval(() => { if (document.visibilityState === 'visible') void pullWhileOpen() }, 30_000)
 }
 
 export const MIN_PASSWORD = 8
@@ -51,6 +105,7 @@ export async function unlock(password: string) {
   const o = openDb(await getSQL(), bytes)
   sqlite = o.sqlite; key = k; salt = v.salt
   set({ status: 'open', db: o.db, version: 0, saving: false, saveError: null })
+  if (sync.syncEnabled() && sync.knownVersion() === 0) void flush(true) // jamais envoyé sur le compte : première copie
 }
 
 export function lock() {
@@ -60,6 +115,7 @@ export function lock() {
 /** Supprime définitivement toutes les données (RGPD). */
 export async function wipeAll() {
   clearTimeout(timer); sqlite?.close(); sqlite = null; key = null; history = []
+  if (sync.syncEnabled()) await sync.deleteRemote().catch(() => {}) // efface aussi la copie du compte
   await wipeVault()
   set({ status: 'new' })
 }
@@ -152,7 +208,9 @@ export function flush(force = false): Promise<void> {
     dirty = false
     const bytes = exportDb(sqlite)
     try {
-      await saveVault(await seal(key, salt, bytes))
+      const sealed = await seal(key, salt, bytes)
+      await saveVault(sealed)
+      if (sync.syncEnabled()) void push(sealed)
       if (state.status === 'open' && state.saveError) set({ ...state, saveError: null })
     } catch (e) {
       dirty = true
@@ -167,22 +225,19 @@ export async function exportBackup(): Promise<Blob> {
   await flush()
   const v = await loadVault()
   if (!v) throw new Error('Rien à sauvegarder')
-  return new Blob([JSON.stringify({ app: 'budget', v: v.v, salt: b64(v.salt), iv: b64(v.iv), data: b64(new Uint8Array(v.data)) })], { type: 'application/json' })
+  return new Blob([sync.sealedToJson(v)], { type: 'application/json' })
 }
 
 export async function restoreBackup(file: File, password: string) {
-  const j = JSON.parse(await file.text()) as Record<string, string>
-  if (j.app !== 'budget' || !j.salt || !j.iv || !j.data) throw new Error('Fichier de sauvegarde invalide.')
-  const sealed: Sealed = { v: 1, salt: unb64(j.salt), iv: unb64(j.iv), data: unb64(j.data).buffer }
+  const sealed = sync.jsonToSealed(await file.text())
   const k = await deriveKey(password, sealed.salt)
   try { await open(k, sealed) } catch { throw new Error('Mot de passe incorrect pour cette sauvegarde.') }
   clearTimeout(timer); sqlite?.close(); sqlite = null
   await saveVault(sealed)
   await unlock(password)
+  if (sync.syncEnabled()) await flush(true) // la sauvegarde restaurée devient la copie du compte
 }
 
-const b64 = (u: Uint8Array) => { let s = ''; for (const b of u) s += String.fromCharCode(b); return btoa(s) }
-const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 
 // sauvegarde immédiate quand l'onglet passe en arrière-plan (fermeture, changement d'appli sur mobile)
 if (typeof document !== 'undefined') {
