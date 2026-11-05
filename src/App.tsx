@@ -23,7 +23,7 @@ const PAGES: Record<string, [string, ComponentType, 'main' | 'more']> = {
   bilan: ['Bilan', named(() => import('@/features/bilan/BilanPage'), 'BilanPage'), 'main'],
   operations: ['Journal', TransactionsPage, 'main'],
   comptes: ['Comptes', named(() => import('@/features/accounts/AccountsPage'), 'AccountsPage'), 'main'],
-  recurrences: ['Salaire et charges fixes', named(() => import('@/features/recurring/RecurringPage'), 'RecurringPage'), 'more'],
+  recurrences: ['Salaire, charges et abonnements', named(() => import('@/features/recurring/RecurringPage'), 'RecurringPage'), 'more'],
   analyses: ['Analyses', named(() => import('@/features/analyses/AnalysesPage'), 'AnalysesPage'), 'more'],
   patrimoine: ['Épargne et crédits', named(() => import('@/features/patrimoine/PatrimoinePage'), 'PatrimoinePage'), 'more'],
   simulations: ['Simulations', named(() => import('@/features/simulations/SimulationsPage'), 'SimulationsPage'), 'more'],

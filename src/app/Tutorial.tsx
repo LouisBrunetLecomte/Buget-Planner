@@ -111,7 +111,7 @@ export function Tutorial() {
           {datedForm('revenu', 'Salaire', 'Salaire', 'tu-i', 'Ton salaire net (€)', 'Il arrive', income, setIncome, payDay, setPayDay, '2 100,00')}
           {datedForm('charge', 'Loyer', 'Loyer / crédit', 'tu-r', 'Ton loyer ou crédit (€)', 'Prélevé', rent, setRent, rentDay, setRentDay, '850,00')}
           {datedForm('revenu', 'CAF / aide', 'CAF / aides', 'tu-o', 'Autre revenu (CAF, aide…) (€)', 'Il arrive', other, setOther, otherDay, setOtherDay, '180,00')}
-          <p className="text-xs text-muted-foreground">Ces montants sont saisis une seule fois : s’ils changent, modifie-les dans Budget ou dans Salaire et charges fixes, et tout suit.</p>
+          <p className="text-xs text-muted-foreground">Ces montants sont saisis une seule fois : s’ils changent, modifie-les dans Budget ou dans Salaire, charges et abonnements, et tout suit.</p>
         </div>
       ),
     },
@@ -119,7 +119,7 @@ export function Tutorial() {
       title: '4. Ce que Budget surveille pour toi',
       body: (
         <ul className="grid list-disc gap-2 pl-5 text-sm text-muted-foreground">
-          <li>Après ton premier import, la page <strong>Salaire et charges fixes</strong> (menu Plus) repère loyer, abonnements, salaire… Un clic sur « Suivre » et Budget te prévient avant chaque prélèvement.</li>
+          <li>Après ton premier import, la page <strong>Salaire, charges et abonnements</strong> (menu Plus) repère loyer, abonnements, salaire… Un clic sur « Suivre » et Budget te prévient avant chaque prélèvement.</li>
           <li>L’<strong>Aperçu</strong> affiche ce qu’il te reste à vivre jusqu’à ta paie, par jour, les alertes (budget dépassé, solde bas, doublon…) et tes prochaines échéances.</li>
           <li>Les virements entre tes propres comptes sont repérés pour ne pas compter deux fois.</li>
         </ul>

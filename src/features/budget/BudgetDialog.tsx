@@ -92,7 +92,7 @@ export function BudgetDialog({ categoryId, month, row, onClose }: { categoryId: 
                   <Input aria-label={`Fin de ${e.name} (facultatif)`} title="Dernière échéance (facultatif)" type="date" value={e.end} onChange={(ev) => setItemEdits(itemEdits.map((x, j) => (j === k ? { ...x, end: ev.target.value } : x)))} />
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">Montant, jour et date de fin facultative. Ces échéances viennent de Salaire et charges fixes : les changer ici les change partout (calendrier, Aperçu, prévisions).</p>
+              <p className="text-xs text-muted-foreground">Montant, jour et date de fin facultative. Ces échéances viennent de Salaire, charges et abonnements : les changer ici les change partout (calendrier, Aperçu, prévisions).</p>
             </fieldset>
           ) : (
             <div className="grid gap-1.5"><Label htmlFor="ba">{kind === 'revenu' ? 'Revenu prévu (€)' : 'Budget (€)'}</Label><Input id="ba" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus required /></div>

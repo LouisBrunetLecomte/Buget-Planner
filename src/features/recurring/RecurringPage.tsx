@@ -78,6 +78,19 @@ function List({ st, edit }: { st: b.RecurringStatus[]; edit: (d: RecurringDraft)
   )
 }
 
+/** Abonnements seuls, du plus cher sur l'année au moins cher. */
+function Subscriptions({ st, edit }: { st: b.RecurringStatus[]; edit: (d: RecurringDraft) => void }) {
+  const subs = st.filter((s) => s.r.kind === 'abonnement').map((s) => ({ s, year: s.r.active ? annualCost(s.r, today()) : 0 })).sort((x, y) => x.year - y.year)
+  const total = subs.reduce((t, x) => t + x.year, 0)
+  if (!subs.length) return <Empty>Aucun abonnement suivi. Ajoute-en un (type « Abonnement ») ou regarde l’onglet Détection.</Empty>
+  return (
+    <>
+      <p className="mb-3 text-sm text-muted-foreground">{subs.filter((x) => x.s.r.active).length} abonnements actifs : <Money cents={total} colored={false} className="font-medium text-foreground" /> sur les 12 prochains mois. Les plus chers en premier : c’est là qu’une résiliation rapporte le plus.</p>
+      <List st={subs.map((x) => x.s)} edit={edit} />
+    </>
+  )
+}
+
 function Calendar() {
   const { db, version } = useDb()
   const [month, setMonth] = useState(monthOf(today()))
@@ -149,11 +162,12 @@ export function RecurringPage() {
   const sorted = [...st].sort((x, y) => Number(y.r.active) - Number(x.r.active) || (x.next ?? '9').localeCompare(y.next ?? '9'))
   return (
     <>
-      <PageHeader title="Salaire et charges fixes"><Button onClick={() => setEditing({})}>Ajouter</Button></PageHeader>
+      <PageHeader title="Salaire, charges et abonnements"><Button onClick={() => setEditing({})}>Ajouter</Button></PageHeader>
       <Summary st={st} />
       <Tabs defaultValue="list">
-        <TabsList className="mb-3"><TabsTrigger value="list">Échéances</TabsTrigger><TabsTrigger value="cal">Calendrier</TabsTrigger><TabsTrigger value="detect">Détection</TabsTrigger></TabsList>
+        <TabsList className="mb-3"><TabsTrigger value="list">Échéances</TabsTrigger><TabsTrigger value="abos">Abonnements</TabsTrigger><TabsTrigger value="cal">Calendrier</TabsTrigger><TabsTrigger value="detect">Détection</TabsTrigger></TabsList>
         <TabsContent value="list"><List st={sorted} edit={setEditing} /></TabsContent>
+        <TabsContent value="abos"><Subscriptions st={st} edit={setEditing} /></TabsContent>
         <TabsContent value="cal"><Card><CardContent className="pt-4"><Calendar /></CardContent></Card></TabsContent>
         <TabsContent value="detect"><Detection edit={setEditing} /></TabsContent>
       </Tabs>
